@@ -1,0 +1,6 @@
+{
+  "name": "Wealth Creation Matrix — Will Drafting Assistant",
+  "description": "Will Drafting Assistant for Hindu, Buddhist, Jain and Sikh adults in India under the Indian Succession Act, 1925 and Hindu Succession Act, 1956.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
