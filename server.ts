@@ -165,6 +165,9 @@ function loadDataFromDisk() {
     if (fs.existsSync(SETTINGS_FILE)) {
       const data = fs.readFileSync(SETTINGS_FILE, 'utf-8');
       appSettings = { ...appSettings, ...JSON.parse(data) };
+      if (appSettings.razorpayPaymentPageUrl && appSettings.razorpayPaymentPageUrl.includes('will-blueprint-now')) {
+        appSettings.razorpayPaymentPageUrl = '';
+      }
     }
   } catch (e) {
     console.error('Failed to load settings from disk', e);
@@ -982,7 +985,10 @@ async function startServer() {
       licenseKey: record.licenseKey,
       creditsRemaining,
       trainingCompleted: matchedLicense ? matchedLicense.trainingCompleted : !appSettings.requireTrainingOrientation,
-      paymentPageUrl: appSettings.razorpayPaymentPageUrl || '',
+      paymentPageUrl:
+        appSettings.razorpayPaymentPageUrl && !appSettings.razorpayPaymentPageUrl.includes('will-blueprint-now')
+          ? appSettings.razorpayPaymentPageUrl
+          : '',
       message: record.paymentStatus === 'paid'
         ? `Payment verified! License ${record.licenseKey} is active for +91 ${cleanPhone}. Entering Drafting Assistant.`
         : `Registration saved for +91 ${cleanPhone}. Please complete payment of ₹1,999 to enter the Drafting Assistant.`,

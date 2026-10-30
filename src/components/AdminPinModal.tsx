@@ -575,16 +575,29 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
                   <p className="text-stone-600 leading-relaxed mt-1 text-[11px]">
                     Enter your dedicated Razorpay Payment Page URL (e.g. <code>https://pages.razorpay.com/...</code> or <code>https://rzp.io/l/...</code>). When visitors click <strong>"Buy The Will Blueprint Now"</strong> on the landing page, they will be registered and immediately redirected to this page to pay.
                   </p>
-                  <div className="mt-2">
-                    <input
-                      type="url"
-                      value={razorpayPaymentPageUrlInput}
-                      onChange={(e) => setRazorpayPaymentPageUrlInput(e.target.value)}
-                      placeholder="e.g. https://pages.razorpay.com/will-blueprint or https://rzp.io/l/will-draft"
-                      className="w-full text-xs px-3 py-2 border border-stone-300 rounded-lg bg-white font-mono"
-                    />
-                    <span className="text-[10px] text-stone-500 block mt-1">
-                      If left empty, clicking the CTA will open the instant in-app Razorpay popup instead.
+                  <div className="mt-2 space-y-1.5">
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={razorpayPaymentPageUrlInput}
+                        onChange={(e) => setRazorpayPaymentPageUrlInput(e.target.value)}
+                        placeholder="e.g. https://pages.razorpay.com/will-blueprint or https://rzp.io/l/..."
+                        className="flex-1 text-xs px-3 py-2 border border-stone-300 rounded-lg bg-white font-mono"
+                      />
+                      {razorpayPaymentPageUrlInput.trim().startsWith('http') && (
+                        <a
+                          href={razorpayPaymentPageUrlInput.trim()}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 shrink-0"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Test Link</span>
+                        </a>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-stone-500 block">
+                      If left empty, clicking the CTA will open the built-in in-app Razorpay popup instead.
                     </span>
                   </div>
                 </div>

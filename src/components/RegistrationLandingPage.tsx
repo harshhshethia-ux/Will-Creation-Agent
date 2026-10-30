@@ -99,10 +99,23 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
 
   const cleanPhone = phone.replace(/\D/g, '').slice(-10);
 
+  // Helper to verify if custom external Razorpay page is configured
+  const isValidExternalUrl = (url?: string | null): boolean => {
+    if (!url) return false;
+    const clean = url.trim().toLowerCase();
+    if (!clean.startsWith('http')) return false;
+    if (clean.includes('will-blueprint-now') || clean.includes('example.com')) return false;
+    if (clean === 'https://pages.razorpay.com' || clean === 'https://pages.razorpay.com/') return false;
+    return true;
+  };
+
+  const [externalPaymentUrl, setExternalPaymentUrl] = useState<string | null>(null);
+
   // Handle standard registration submission
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+    setExternalPaymentUrl(null);
 
     if (!fullName.trim()) {
       setErrorMsg('Please enter your full name.');
@@ -163,21 +176,33 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
           });
         }, 1000);
       } else {
-        // CTA is "Buy The Will Blueprint Now": immediately redirect to Razorpay payment page or trigger checkout
-        if (result.paymentPageUrl && result.paymentPageUrl.startsWith('http')) {
+        // CTA is "Buy The Will Blueprint Now":
+        // Check if an external dedicated Razorpay payment page URL is configured
+        if (isValidExternalUrl(result.paymentPageUrl)) {
+          let destUrl = result.paymentPageUrl!;
           try {
-            const redirectUrl = new URL(result.paymentPageUrl);
+            const redirectUrl = new URL(result.paymentPageUrl!);
             redirectUrl.searchParams.set('name', fullName.trim());
             redirectUrl.searchParams.set('phone', cleanPhone);
             if (email.trim()) redirectUrl.searchParams.set('email', email.trim());
-            window.location.href = redirectUrl.toString();
-            return;
+            destUrl = redirectUrl.toString();
           } catch {
-            window.location.href = result.paymentPageUrl;
-            return;
+            destUrl = result.paymentPageUrl!;
+          }
+
+          setExternalPaymentUrl(destUrl);
+
+          // Attempt opening in a new tab (prevents iframe frame-ancestors block)
+          try {
+            const opened = window.open(destUrl, '_blank', 'noopener,noreferrer');
+            if (!opened && window.top) {
+              window.top.location.href = destUrl;
+            }
+          } catch {
+            // Popup blocker may trigger: externalPaymentUrl banner provides direct click
           }
         } else {
-          // Open in-app Razorpay payment checkout modal directly
+          // Open built-in secure in-app Razorpay payment checkout modal directly
           onOpenPricingModal({
             name: fullName.trim(),
             phone: cleanPhone,
@@ -242,19 +267,26 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
 
   const handlePayNow = () => {
     const pageUrl = verificationResult?.paymentPageUrl;
-    if (pageUrl && pageUrl.startsWith('http')) {
+    if (isValidExternalUrl(pageUrl)) {
+      let destUrl = pageUrl!;
       try {
-        const dest = new URL(pageUrl);
+        const dest = new URL(pageUrl!);
         dest.searchParams.set('name', fullName.trim());
         dest.searchParams.set('phone', cleanPhone);
         if (email.trim()) dest.searchParams.set('email', email.trim());
-        window.location.href = dest.toString();
-        return;
+        destUrl = dest.toString();
       } catch {
-        window.location.href = pageUrl;
-        return;
+        destUrl = pageUrl!;
       }
+      setExternalPaymentUrl(destUrl);
+      try {
+        window.open(destUrl, '_blank', 'noopener,noreferrer');
+      } catch {
+        window.location.href = destUrl;
+      }
+      return;
     }
+
     onOpenPricingModal({
       name: fullName.trim(),
       phone: cleanPhone,
@@ -333,8 +365,52 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
             </div>
           )}
 
-          {/* Unpaid Notice & Instant Payment Button */}
-          {verificationResult && !verificationResult.isPaid && (
+          {/* Payment Link & Instant Checkout Card */}
+          {externalPaymentUrl && (
+            <div className="mb-5 p-4 rounded-xl bg-amber-950/80 border-2 border-amber-500/80 text-amber-100 animate-in fade-in duration-200">
+              <div className="flex items-start gap-3">
+                <Sparkles className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Registration Details Saved</h4>
+                  <p className="text-xs text-amber-200 mt-1 leading-relaxed">
+                    Complete your payment of ₹1,999 on our official Razorpay checkout page:
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-3.5 pt-3 border-t border-amber-800/60 space-y-2">
+                <a
+                  href={externalPaymentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-stone-950 font-bold text-xs uppercase tracking-wider transition-all shadow-md text-center cursor-pointer"
+                >
+                  <CreditCard className="w-4 h-4 text-stone-950" />
+                  <span>Pay ₹1,999 on Razorpay Now</span>
+                  <ArrowRight className="w-4 h-4 text-stone-950" />
+                </a>
+
+                <div className="text-center pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenPricingModal({
+                        name: fullName.trim(),
+                        phone: cleanPhone,
+                        email: email.trim(),
+                      });
+                    }}
+                    className="text-[11px] text-amber-300/80 hover:text-amber-200 underline cursor-pointer"
+                  >
+                    Or open instant in-app checkout popup
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Unpaid Notice & Instant Payment Button (when no external link configured) */}
+          {verificationResult && !verificationResult.isPaid && !externalPaymentUrl && (
             <div className="mb-5 p-4 rounded-xl bg-amber-950/60 border border-amber-600/70 text-amber-100 animate-in fade-in duration-200">
               <div className="flex items-start gap-3">
                 <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
