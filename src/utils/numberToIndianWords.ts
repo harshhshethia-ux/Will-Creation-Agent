@@ -17,19 +17,55 @@ export function formatIndianDate(dateStr?: string): string {
 }
 
 /**
- * Calculates age in full years from date of birth string (YYYY-MM-DD).
+ * Calculates age in full years from date of birth string or direct age.
+ * Supports:
+ * - DD/MM/YYYY or DD-MM-YYYY (e.g. "14/04/1975", "14-04-1975")
+ * - ISO format YYYY-MM-DD (e.g. "1975-04-14")
+ * - Natural text (e.g. "14 April 1975", "April 14, 1975")
+ * - Direct age mention (e.g. "45", "45 years")
  */
 export function calculateAge(dobStr?: string): number | null {
   if (!dobStr) return null;
-  const dob = new Date(dobStr);
-  if (isNaN(dob.getTime())) return null;
+  const trimmed = dobStr.trim();
+
+  // If user directly entered just a number or "X years"
+  const directAgeMatch = trimmed.match(/^(\d{1,3})\s*(?:years|yrs|years old)?$/i);
+  if (directAgeMatch) {
+    const directAge = parseInt(directAgeMatch[1], 10);
+    return directAge >= 0 && directAge <= 125 ? directAge : null;
+  }
+
+  let dob: Date | null = null;
+
+  // Check DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1;
+    const year = parseInt(dmyMatch[3], 10);
+    dob = new Date(year, month, day);
+  } else {
+    // Try standard date parsing
+    const parsed = new Date(trimmed);
+    if (!isNaN(parsed.getTime())) {
+      dob = parsed;
+    }
+  }
+
+  if (!dob || isNaN(dob.getTime())) return null;
+
   const today = new Date();
+  // Check if date is in the future
+  if (dob.getTime() > today.getTime()) {
+    return null;
+  }
+
   let age = today.getFullYear() - dob.getFullYear();
   const m = today.getMonth() - dob.getMonth();
   if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
     age--;
   }
-  return age >= 0 ? age : 0;
+  return age >= 0 ? age : null;
 }
 
 const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',

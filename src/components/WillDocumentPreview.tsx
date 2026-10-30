@@ -1,5 +1,17 @@
 import React, { useState } from 'react';
-import { Printer, Download, Copy, Check, AlertTriangle, ShieldCheck, Loader2 } from 'lucide-react';
+import {
+  Printer,
+  Download,
+  Copy,
+  Check,
+  AlertTriangle,
+  ShieldCheck,
+  Loader2,
+  Lock,
+  Zap,
+  FileEdit,
+  CheckCircle2,
+} from 'lucide-react';
 import { WillData } from '../types/will';
 import { assembleWillDocument } from '../utils/clauseLibrary';
 import { validateWillData } from '../utils/validation';
@@ -10,6 +22,10 @@ interface WillDocumentPreviewProps {
   onOpenJsonModal: () => void;
   onRequestVerification?: () => void;
   isVerified?: boolean;
+  isPaid?: boolean;
+  isConsumed?: boolean;
+  onRequestPayment?: (planId?: 'standard' | 'amendment') => void;
+  onExecutionCompleted?: () => void;
 }
 
 export const WillDocumentPreview: React.FC<WillDocumentPreviewProps> = ({
@@ -17,19 +33,46 @@ export const WillDocumentPreview: React.FC<WillDocumentPreviewProps> = ({
   onOpenJsonModal,
   onRequestVerification,
   isVerified = true,
+  isPaid = false,
+  isConsumed = false,
+  onRequestPayment,
+  onExecutionCompleted,
 }) => {
   const [copied, setCopied] = useState(false);
-  const [isWatermarkOn, setIsWatermarkOn] = useState(true);
+  const [isWatermarkOn, setIsWatermarkOn] = useState(!isPaid || isConsumed);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   const assembled = assembleWillDocument(data);
   const validation = validateWillData(data);
 
   const handlePrint = () => {
+    if (!isPaid && onRequestPayment) {
+      onRequestPayment('standard');
+      return;
+    }
+
+    if (isConsumed && onRequestPayment) {
+      onRequestPayment('amendment');
+      return;
+    }
+
     window.print();
+    if (onExecutionCompleted && !isConsumed) {
+      onExecutionCompleted();
+    }
   };
 
   const handleDirectDownload = async () => {
+    if (!isPaid && onRequestPayment) {
+      onRequestPayment('standard');
+      return;
+    }
+
+    if (isConsumed && onRequestPayment) {
+      onRequestPayment('amendment');
+      return;
+    }
+
     if (!isVerified && onRequestVerification) {
       onRequestVerification();
       return;
@@ -40,6 +83,9 @@ export const WillDocumentPreview: React.FC<WillDocumentPreviewProps> = ({
       await downloadElementAsPdf('legal-will-document', {
         testatorName: data.testator.fullName || 'Testator',
       });
+      if (onExecutionCompleted && !isConsumed) {
+        onExecutionCompleted();
+      }
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -47,7 +93,7 @@ export const WillDocumentPreview: React.FC<WillDocumentPreviewProps> = ({
 
   const handleCopyText = () => {
     let fullText = `${assembled.title}\n\n`;
-    assembled.clauses.forEach(c => {
+    assembled.clauses.forEach((c) => {
       fullText += `${c.number}. ${c.title}\n${c.text}\n\n`;
     });
     fullText += `${assembled.signoff.statement}\n\n`;
@@ -86,7 +132,7 @@ export const WillDocumentPreview: React.FC<WillDocumentPreviewProps> = ({
             <input
               type="checkbox"
               checked={isWatermarkOn}
-              onChange={e => setIsWatermarkOn(e.target.checked)}
+              onChange={(e) => setIsWatermarkOn(e.target.checked)}
               className="rounded text-stone-900"
             />
             <span>Draft Watermark</span>
@@ -94,7 +140,7 @@ export const WillDocumentPreview: React.FC<WillDocumentPreviewProps> = ({
 
           <button
             onClick={handleCopyText}
-            className="px-3 py-1.5 text-xs border border-stone-300 hover:bg-stone-50 rounded text-stone-700 transition-colors flex items-center gap-1.5"
+            className="px-3 py-1.5 text-xs border border-stone-300 hover:bg-stone-50 rounded text-stone-700 transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
             <span>{copied ? 'Copied' : 'Copy Text'}</span>
@@ -102,27 +148,27 @@ export const WillDocumentPreview: React.FC<WillDocumentPreviewProps> = ({
 
           <button
             onClick={onOpenJsonModal}
-            className="px-3 py-1.5 text-xs border border-stone-300 hover:bg-stone-50 rounded text-stone-700 transition-colors hidden sm:block"
+            className="px-3 py-1.5 text-xs border border-stone-300 hover:bg-stone-50 rounded text-stone-700 transition-colors hidden sm:block cursor-pointer"
           >
-            Inspect JSON Output
+            Inspect JSON
           </button>
 
           <button
             onClick={handleDirectDownload}
             disabled={isGeneratingPdf}
-            className="px-3.5 py-1.5 text-xs font-semibold bg-amber-200 text-stone-900 hover:bg-amber-100 disabled:opacity-50 rounded transition-colors flex items-center gap-1.5 shadow-2xs"
+            className="px-3.5 py-1.5 text-xs font-semibold bg-amber-200 text-stone-900 hover:bg-amber-100 disabled:opacity-50 rounded transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
           >
             {isGeneratingPdf ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Download className="w-3.5 h-3.5" />
             )}
-            <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download PDF'}</span>
+            <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Official PDF'}</span>
           </button>
 
           <button
             onClick={handlePrint}
-            className="px-3.5 py-1.5 text-xs font-semibold bg-stone-900 text-amber-100 hover:bg-stone-800 rounded transition-colors flex items-center gap-1.5 shadow-xs"
+            className="px-3.5 py-1.5 text-xs font-semibold bg-stone-900 text-amber-100 hover:bg-stone-800 rounded transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
           >
             <Printer className="w-3.5 h-3.5" />
             <span>Print / Save as PDF</span>
@@ -145,17 +191,88 @@ export const WillDocumentPreview: React.FC<WillDocumentPreviewProps> = ({
         </div>
       )}
 
+      {/* Licensing & Gating Status Banners */}
+      {isConsumed ? (
+        /* Executed / Amendment Required Banner */
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-950 shadow-2xs print:hidden">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-amber-200 border border-amber-300 flex items-center justify-center text-amber-900 shrink-0">
+              <FileEdit className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="font-bold block text-stone-900">
+                1 Will Execution Completed • Amendment License Required for Changes
+              </span>
+              <span className="text-stone-600">
+                Under Indian Succession Act 1925 (Sections 62 & 70), your previous Will execution has been logged. To alter clauses, add newly acquired properties, or prepare an official Codicil, unlock an Amendment License (₹999).
+              </span>
+            </div>
+          </div>
+          {onRequestPayment && (
+            <button
+              onClick={() => onRequestPayment('amendment')}
+              className="px-3.5 py-2 bg-stone-900 hover:bg-stone-800 text-amber-200 font-bold rounded-md shadow-xs flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-300" />
+              <span>Unlock Amendment License (₹999)</span>
+            </button>
+          )}
+        </div>
+      ) : !isPaid ? (
+        /* Unpaid Gating Banner */
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 rounded-lg p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-950 shadow-2xs print:hidden">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-amber-200 border border-amber-300 flex items-center justify-center text-amber-900 shrink-0">
+              <Lock className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="font-semibold block text-stone-900">
+                Official Signing Will & Watermark-Free PDF Gated
+              </span>
+              <span className="text-stone-600">
+                Complete one-time ₹1,999 Razorpay payment to remove watermarks, unlock official PDF download, and enable witness attestation.
+              </span>
+            </div>
+          </div>
+          {onRequestPayment && (
+            <button
+              onClick={() => onRequestPayment('standard')}
+              className="px-3.5 py-2 bg-stone-900 hover:bg-stone-800 text-amber-200 font-semibold rounded-md shadow-xs flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-300" />
+              <span>Unlock via Razorpay (₹1,999)</span>
+            </button>
+          )}
+        </div>
+      ) : (
+        /* Active Paid Customer Banner */
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center justify-between text-xs text-emerald-900 print:hidden">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>
+              <strong>Verified Single-User License:</strong> 1 official watermark-free execution credit active for your Will.
+            </span>
+          </div>
+          <span className="text-[11px] font-mono text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded font-semibold">
+            Credit: 1 Available
+          </span>
+        </div>
+      )}
+
       {/* Actual Legal Document Paper Sheet */}
       <div
         id="legal-will-document"
         className="relative bg-white border border-stone-300 shadow-sm rounded-sm p-8 sm:p-14 text-stone-900 font-serif leading-relaxed text-sm sm:text-base selection:bg-amber-100 print:border-none print:shadow-none print:p-0"
       >
-        
         {/* Diagonal Draft Watermark */}
         {isWatermarkOn && (
           <div className="pointer-events-none select-none absolute inset-0 flex items-center justify-center overflow-hidden opacity-8">
             <span className="text-4xl sm:text-6xl font-sans font-bold tracking-widest text-stone-900 -rotate-30 border-8 border-stone-900 p-8 text-center uppercase">
-              DRAFT. NOT VALID UNTIL SIGNED AND WITNESSED.
+              {!isPaid
+                ? 'UNPAID DRAFT • NOT VALID FOR SIGNING'
+                : isConsumed
+                ? 'EXECUTED WILL • AMENDMENT REQUIRED FOR CHANGES'
+                : 'DRAFT • NOT VALID UNTIL SIGNED AND WITNESSED'}
             </span>
           </div>
         )}
@@ -168,120 +285,115 @@ export const WillDocumentPreview: React.FC<WillDocumentPreviewProps> = ({
           <h1 className="text-2xl sm:text-3xl font-bold tracking-wider text-stone-900 uppercase">
             LAST WILL AND TESTAMENT
           </h1>
-          <p className="text-sm font-sans uppercase tracking-widest text-stone-600 mt-1">OF</p>
-          <p className="text-xl sm:text-2xl font-bold text-stone-900 mt-1">
-            {assembled.testatorName}
+          <p className="text-sm font-sans text-stone-700 mt-2">
+            OF <span className="font-bold underline uppercase">{assembled.testatorName.toUpperCase()}</span>
           </p>
         </div>
 
-        {/* Sequential Clauses (C1 to C25) */}
-        <div className="space-y-6 text-justify">
-          {assembled.clauses.map(clause => (
-            <div key={clause.clauseId} className="space-y-1">
-              <h3 className="font-sans text-xs uppercase tracking-wider font-bold text-stone-700">
-                Clause {clause.number}. {clause.title}
-              </h3>
-              <p className="whitespace-pre-line text-stone-900 leading-relaxed">
+        {/* Clauses Stack */}
+        <div className="space-y-6">
+          {assembled.clauses.map((clause, idx) => (
+            <div key={idx} className="space-y-1.5">
+              <h2 className="font-bold text-stone-900 text-sm sm:text-base tracking-wide uppercase">
+                {clause.number}. {clause.title}
+              </h2>
+              <p className="text-stone-800 text-justify text-xs sm:text-sm leading-relaxed whitespace-pre-line">
                 {clause.text}
               </p>
             </div>
           ))}
         </div>
 
-        {/* C26. Testator's Signature */}
-        <div className="mt-12 pt-8 border-t border-stone-400 space-y-6 page-break-inside-avoid">
-          <h3 className="font-sans text-xs uppercase tracking-wider font-bold text-stone-700">
-            Clause {assembled.clauses.length + 1}. TESTATOR'S SIGNATURE & EXECUTION
-          </h3>
-          <p className="leading-relaxed">
+        {/* Sign-off & Testator Signature Block */}
+        <div className="mt-12 pt-8 border-t border-stone-300 space-y-6">
+          <p className="text-justify text-xs sm:text-sm italic text-stone-800">
             {assembled.signoff.statement}
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-4 items-center">
-            {/* Passport Photo Box */}
-            <div className="w-36 h-44 border-2 border-dashed border-stone-400 flex flex-col items-center justify-center text-center p-3 text-xs text-stone-500 font-sans">
-              <span>Affix Recent Passport Photograph of Testator</span>
-              <span className="text-[10px] text-stone-400 mt-2">(Sign across photo)</span>
+          <div className="grid grid-cols-2 gap-8 pt-6">
+            <div className="space-y-2">
+              <div className="w-28 h-32 border border-dashed border-stone-400 flex items-center justify-center text-[10px] text-stone-500 font-sans text-center p-2 bg-stone-50">
+                Affix Passport Size Photograph of Testator
+              </div>
             </div>
 
-            {/* Testator Signature / Thumb impression */}
-            <div className="space-y-6 font-sans text-xs">
-              <div className="pt-10 border-b border-stone-800 text-center">
-                <span className="text-stone-700 font-semibold uppercase">
-                  Signature or Left Thumb Impression of Testator
-                </span>
-              </div>
-              <div className="flex justify-between text-stone-600">
-                <span>Date: {assembled.signoff.date}</span>
-                <span>Place: {assembled.signoff.place}</span>
-              </div>
+            <div className="flex flex-col justify-end text-right space-y-1">
+              <div className="border-b border-stone-800 w-48 ml-auto pb-8"></div>
+              <p className="font-bold text-xs uppercase">{assembled.testatorName.toUpperCase()}</p>
+              <p className="text-[11px] text-stone-600 font-sans">(Signature / Left Thumb Impression of Testator)</p>
             </div>
           </div>
         </div>
 
-        {/* C27. Attestation by Witnesses */}
-        <div className="mt-12 pt-8 border-t border-stone-400 space-y-6 page-break-inside-avoid">
-          <h3 className="font-sans text-xs uppercase tracking-wider font-bold text-stone-700">
-            Clause {assembled.clauses.length + 2}. ATTESTATION BY WITNESSES
-          </h3>
-          <p className="leading-relaxed">
-            {assembled.witnesses.intro}
-          </p>
+        {/* Witness Attestation Block */}
+        <div className="mt-10 pt-6 border-t-2 border-stone-900 space-y-6 break-inside-avoid">
+          <div>
+            <h3 className="font-bold text-sm uppercase tracking-wider text-stone-900 mb-2">
+              ATTESTATION BY WITNESSES
+            </h3>
+            <p className="text-xs text-justify text-stone-700 leading-relaxed font-sans">
+              {assembled.witnesses.intro}
+            </p>
+          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 font-sans text-xs">
             {/* Witness 1 */}
-            <div className="p-4 border border-stone-300 rounded font-sans text-xs space-y-2 bg-stone-50/50">
-              <p className="font-bold text-stone-900 uppercase">Witness 1</p>
-              <p>Name: <span className="font-semibold">{assembled.witnesses.w1.name}</span></p>
-              <p>Relation: {assembled.witnesses.w1.relation}</p>
-              <p>Occupation: {assembled.witnesses.w1.occupation}</p>
-              <p>Address: {assembled.witnesses.w1.address}</p>
-              <div className="pt-8 border-b border-stone-400 text-stone-500 text-[10px]">
-                Signature: ______________________
+            <div className="p-4 border border-stone-200 rounded-sm bg-stone-50/50 space-y-3">
+              <div className="font-bold text-stone-900 border-b border-stone-200 pb-1 flex justify-between">
+                <span>WITNESS 1</span>
+                <span className="text-[10px] text-stone-500 font-normal">Independent</span>
               </div>
-              <p className="text-stone-500 text-[10px]">Date: ________________</p>
+              <div className="space-y-1 text-stone-700 text-[11px]">
+                <p><strong>Name:</strong> {assembled.witnesses.w1.name}</p>
+                <p><strong>Relation / S/o, D/o:</strong> {assembled.witnesses.w1.relation}</p>
+                <p><strong>Occupation:</strong> {assembled.witnesses.w1.occupation}</p>
+                <p><strong>Address:</strong> {assembled.witnesses.w1.address}</p>
+              </div>
+              <div className="pt-6 border-b border-stone-400"></div>
+              <p className="text-[10px] text-stone-500 text-center">(Signature of Witness 1)</p>
             </div>
 
             {/* Witness 2 */}
-            <div className="p-4 border border-stone-300 rounded font-sans text-xs space-y-2 bg-stone-50/50">
-              <p className="font-bold text-stone-900 uppercase">Witness 2</p>
-              <p>Name: <span className="font-semibold">{assembled.witnesses.w2.name}</span></p>
-              <p>Relation: {assembled.witnesses.w2.relation}</p>
-              <p>Occupation: {assembled.witnesses.w2.occupation}</p>
-              <p>Address: {assembled.witnesses.w2.address}</p>
-              <div className="pt-8 border-b border-stone-400 text-stone-500 text-[10px]">
-                Signature: ______________________
+            <div className="p-4 border border-stone-200 rounded-sm bg-stone-50/50 space-y-3">
+              <div className="font-bold text-stone-900 border-b border-stone-200 pb-1 flex justify-between">
+                <span>WITNESS 2</span>
+                <span className="text-[10px] text-stone-500 font-normal">Independent</span>
               </div>
-              <p className="text-stone-500 text-[10px]">Date: ________________</p>
+              <div className="space-y-1 text-stone-700 text-[11px]">
+                <p><strong>Name:</strong> {assembled.witnesses.w2.name}</p>
+                <p><strong>Relation / S/o, D/o:</strong> {assembled.witnesses.w2.relation}</p>
+                <p><strong>Occupation:</strong> {assembled.witnesses.w2.occupation}</p>
+                <p><strong>Address:</strong> {assembled.witnesses.w2.address}</p>
+              </div>
+              <div className="pt-6 border-b border-stone-400"></div>
+              <p className="text-[10px] text-stone-500 text-center">(Signature of Witness 2)</p>
             </div>
           </div>
         </div>
 
-        {/* C28. Doctor's Certificate (Conditional) */}
+        {/* Doctor's Attestation Certificate (If Testator >= 60) */}
         {assembled.doctor && (
-          <div className="mt-12 pt-8 border-t border-stone-400 space-y-4 page-break-inside-avoid">
-            <h3 className="font-sans text-xs uppercase tracking-wider font-bold text-stone-700">
-              Clause {assembled.clauses.length + 3}. REGISTERED MEDICAL PRACTITIONER'S CERTIFICATE
+          <div className="mt-8 pt-6 border-t border-stone-300 space-y-4 break-inside-avoid">
+            <h3 className="font-bold text-xs uppercase tracking-wider text-stone-900 font-sans">
+              DOCTOR'S MEDICAL CERTIFICATE OF TESTAMENTARY CAPACITY
             </h3>
-            <p className="leading-relaxed">
-              {assembled.doctor.text}
+            <p className="text-xs text-justify text-stone-700 leading-relaxed font-sans italic bg-stone-50 p-3 border border-stone-200 rounded-sm">
+              "{assembled.doctor.text}"
             </p>
-            <div className="pt-8 grid grid-cols-2 gap-8 font-sans text-xs">
-              <div className="border-b border-stone-400 pb-1 text-stone-600">
-                Signature and Seal of Medical Practitioner: __________________
+            <div className="grid grid-cols-2 gap-4 pt-4 font-sans text-xs">
+              <div className="space-y-1 text-stone-700 text-[11px]">
+                <p><strong>Doctor Name:</strong> ___________________________</p>
+                <p><strong>Regn No (MCI / State):</strong> _________________</p>
+                <p><strong>Clinic / Hospital Address:</strong> _______________</p>
+                <p><strong>Date & Time:</strong> ____________________________</p>
               </div>
-              <div className="border-b border-stone-400 pb-1 text-stone-600">
-                Date: {assembled.doctor.examDate}
+              <div className="flex flex-col justify-end text-right space-y-1">
+                <div className="border-b border-stone-800 w-44 ml-auto pb-6"></div>
+                <p className="text-[10px] text-stone-500">(Doctor's Signature & Official Seal)</p>
               </div>
             </div>
           </div>
         )}
-
-        {/* Per-Page Initials & Footer Note */}
-        <div className="mt-12 pt-6 border-t border-stone-300 text-xs font-sans text-stone-500 flex justify-between items-center">
-          <span>Initials of Testator: __________________</span>
-          <span>{assembled.testatorName}, Last Will and Testament</span>
-        </div>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Printer, Download, Copy, AlertTriangle } from 'lucide-react';
+import { X } from 'lucide-react';
 import { WillData } from '../types/will';
 import { WillDocumentPreview } from './WillDocumentPreview';
 
@@ -10,6 +10,10 @@ interface WillDocumentModalProps {
   onOpenJsonModal: () => void;
   onRequestVerification?: () => void;
   isVerified?: boolean;
+  isPaid?: boolean;
+  isConsumed?: boolean;
+  onRequestPayment?: (planId?: 'standard' | 'amendment') => void;
+  onExecutionCompleted?: () => void;
 }
 
 export const WillDocumentModal: React.FC<WillDocumentModalProps> = ({
@@ -19,6 +23,10 @@ export const WillDocumentModal: React.FC<WillDocumentModalProps> = ({
   onOpenJsonModal,
   onRequestVerification,
   isVerified = true,
+  isPaid = false,
+  isConsumed = false,
+  onRequestPayment,
+  onExecutionCompleted,
 }) => {
   if (!isOpen) return null;
 
@@ -38,7 +46,7 @@ export const WillDocumentModal: React.FC<WillDocumentModalProps> = ({
 
           <button
             onClick={onClose}
-            className="text-stone-400 hover:text-white transition-colors p-1 rounded"
+            className="text-stone-400 hover:text-white transition-colors p-1 rounded cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -51,6 +59,10 @@ export const WillDocumentModal: React.FC<WillDocumentModalProps> = ({
             onOpenJsonModal={onOpenJsonModal}
             onRequestVerification={onRequestVerification}
             isVerified={isVerified}
+            isPaid={isPaid}
+            isConsumed={isConsumed}
+            onRequestPayment={onRequestPayment}
+            onExecutionCompleted={onExecutionCompleted}
           />
         </div>
       </div>

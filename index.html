@@ -3,6 +3,47 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Prevent crashes caused by third-party crypto wallet extension collisions (e.g. Phantom, MetaMask)
+      (function() {
+        try {
+          let ethVal = window.ethereum;
+          Object.defineProperty(window, 'ethereum', {
+            configurable: true,
+            enumerable: true,
+            get: function() { return ethVal; },
+            set: function(v) { ethVal = v; }
+          });
+        } catch (_) {}
+
+        // Suppress unhandled errors originating from external browser extensions
+        window.addEventListener('error', function(event) {
+          const isExtensionErr =
+            (event.filename && (
+              event.filename.startsWith('chrome-extension://') ||
+              event.filename.startsWith('moz-extension://') ||
+              event.filename.includes('evmAsk.js')
+            )) ||
+            (event.message && (
+              event.message.includes('redefine property: ethereum') ||
+              event.message.includes('evmAsk')
+            ));
+          if (isExtensionErr) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return true;
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(event) {
+          const reasonStr = event.reason ? String(event.reason.message || event.reason.stack || event.reason) : '';
+          if (reasonStr.includes('ethereum') || reasonStr.includes('chrome-extension://')) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+      })();
+    </script>
     <title>Wealth Creation Matrix — Will Drafting Assistant</title>
     <meta name="description" content="Prepare a draft Last Will and Testament under the Indian Succession Act, 1925 and Hindu Succession Act, 1956 with an approved legal clause library." />
     <meta property="og:title" content="Wealth Creation Matrix — Will Drafting Assistant" />

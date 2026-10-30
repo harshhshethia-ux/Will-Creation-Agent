@@ -1,0 +1,56 @@
+{
+  "9876543210": {
+    "id": "REG-ULTPSH",
+    "name": "Test User",
+    "phone": "9876543210",
+    "email": "test@example.com",
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "registeredAt": 1793342506193,
+    "paymentStatus": "paid",
+    "licenseKey": "LIC-AMD-B4A8-F275",
+    "amountPaid": 999,
+    "paymentSource": "admin_manual",
+    "notes": "Customer registered on landing page"
+  },
+  "9820011223": {
+    "id": "REG-ULU1RZ",
+    "name": "Aarav Mehta",
+    "phone": "9820011223",
+    "email": "aarav@gmail.com",
+    "city": "Delhi",
+    "state": "Delhi",
+    "registeredAt": 1793342521727,
+    "paymentStatus": "unpaid",
+    "amountPaid": 0,
+    "paymentSource": "registration_landing_page",
+    "notes": "Customer registered on landing page"
+  },
+  "9811223344": {
+    "id": "REG-UWS9X6",
+    "name": "Aarav Mehta",
+    "phone": "9811223344",
+    "email": "aarav@example.com",
+    "city": "Pune",
+    "state": "Maharashtra",
+    "registeredAt": 1793360914746,
+    "paymentStatus": "paid",
+    "licenseKey": "LIC-WCM-6347-30DB",
+    "amountPaid": 1999,
+    "paymentSource": "admin_manual",
+    "notes": "Customer registered on landing page"
+  },
+  "9111222333": {
+    "id": "REG-UXR79S",
+    "name": "New Prospect",
+    "phone": "9111222333",
+    "email": "prospect@example.com",
+    "city": "Pune",
+    "state": "Maharashtra",
+    "registeredAt": 1793362544272,
+    "paymentStatus": "unpaid",
+    "amountPaid": 0,
+    "paymentSource": "registration_landing_page",
+    "notes": "Customer registered on landing page"
+  }
+}

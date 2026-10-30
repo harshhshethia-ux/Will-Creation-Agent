@@ -245,9 +245,19 @@ export const GeminiChatUI: React.FC<GeminiChatUIProps> = ({
               className={`max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3 sm:px-5 sm:py-3.5 text-sm sm:text-[15px] leading-relaxed ${
                 msg.sender === 'user'
                   ? 'bg-stone-900 text-stone-100 rounded-br-xs'
+                  : msg.isError
+                  ? 'bg-amber-50/90 border-2 border-amber-300/90 text-stone-900 shadow-xs rounded-bl-xs'
                   : 'bg-white border border-stone-200/80 text-stone-800 shadow-xs rounded-bl-xs'
               }`}
             >
+              {/* Discrepancy header badge if validation error */}
+              {msg.isError && (
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800 bg-amber-100/80 px-2.5 py-1 rounded-md mb-2.5 w-fit border border-amber-200">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                  <span>Discrepancy · Correction Required Before Proceeding</span>
+                </div>
+              )}
+
               {/* Message text with formatting */}
               <div className="whitespace-pre-line space-y-2">
                 {msg.text}
