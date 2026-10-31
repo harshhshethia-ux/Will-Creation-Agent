@@ -12,6 +12,7 @@ import {
   Shield,
   Sparkles,
   ExternalLink,
+  Lock,
 } from 'lucide-react';
 import { WealthCreationLogo } from './WealthCreationLogo';
 import {
@@ -20,6 +21,7 @@ import {
   TestatorRegistration,
   RegistrationResponse,
 } from '../services/razorpayService';
+import { verifyAdminPin } from '../services/verificationService';
 
 const INDIAN_STATES = [
   'Andhra Pradesh',
@@ -72,12 +74,13 @@ interface RegistrationLandingPageProps {
   onOpenPricingModal: (testatorInfo?: { name: string; phone: string; email: string }) => void;
   existingPhone?: string | null;
   existingName?: string;
+  onLaunchDemo?: (mode?: 'sample' | 'blank') => void;
 }
 
-// Normalizes URL to guarantee https:// protocol
+// Normalizes URL to guarantee https:// protocol and clean whitespace/quotes
 export const normalizePaymentUrl = (url?: string | null): string => {
   if (!url) return '';
-  let clean = url.trim();
+  let clean = url.trim().replace(/^["']|["']$/g, '').trim();
   if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
     clean = 'https://' + clean;
   }
@@ -89,7 +92,7 @@ export const isValidExternalUrl = (url?: string | null): boolean => {
   if (!url) return false;
   const clean = normalizePaymentUrl(url);
   const lower = clean.toLowerCase();
-  if (lower.includes('will-blueprint-now') || lower.includes('example.com')) return false;
+  if (lower.includes('example.com')) return false;
   if (lower === 'https://pages.razorpay.com' || lower === 'https://pages.razorpay.com/') return false;
   try {
     const parsed = new URL(clean);
@@ -99,14 +102,23 @@ export const isValidExternalUrl = (url?: string | null): boolean => {
   }
 };
 
-// Constructs destination URL with customer details pre-filled for Razorpay
-export const buildDestinationUrl = (baseUrl: string, name: string, phone: string, email: string): string => {
+// Constructs destination URL safely without breaking Razorpay shortlinks
+export const buildDestinationUrl = (baseUrl: string, name?: string, phone?: string, email?: string): string => {
   const norm = normalizePaymentUrl(baseUrl);
+  if (!norm) return '';
+  // Do not add query params if no user details are provided
+  if (!name?.trim() && !phone?.trim() && !email?.trim()) {
+    return norm;
+  }
+  // Razorpay short links (rzp.io/l/... or rzp.io/i/...) will break or 404 if modified with query params
+  if (norm.includes('rzp.io/l/') || norm.includes('rzp.io/i/')) {
+    return norm;
+  }
   try {
     const u = new URL(norm);
-    if (name.trim()) u.searchParams.set('name', name.trim());
-    if (phone.trim()) u.searchParams.set('phone', phone.trim());
-    if (email.trim()) u.searchParams.set('email', email.trim());
+    if (name?.trim()) u.searchParams.set('name', name.trim());
+    if (phone?.trim()) u.searchParams.set('phone', phone.trim());
+    if (email?.trim()) u.searchParams.set('email', email.trim());
     return u.toString();
   } catch {
     return norm;
@@ -119,6 +131,7 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
   onOpenPricingModal,
   existingPhone = '',
   existingName = '',
+  onLaunchDemo,
 }) => {
   // Sign up form fields
   const [fullName, setFullName] = useState(existingName || '');
@@ -137,30 +150,115 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [verificationResult, setVerificationResult] = useState<RegistrationResponse | null>(null);
-  const [configuredPaymentUrl, setConfiguredPaymentUrl] = useState<string>('');
+  const [hasInitiatedRedirect, setHasInitiatedRedirect] = useState(false);
+
+  // Initialize configuredPaymentUrl immediately from localStorage cache if available
+  const [configuredPaymentUrl, setConfiguredPaymentUrl] = useState<string>(() => {
+    try {
+      const cached = localStorage.getItem('wcm_cached_payment_url');
+      if (cached && isValidExternalUrl(cached)) {
+        return normalizePaymentUrl(cached);
+      }
+    } catch {
+      // ignore storage access error
+    }
+    return '';
+  });
   const [externalPaymentUrl, setExternalPaymentUrl] = useState<string | null>(null);
 
   const redirectContainerRef = useRef<HTMLDivElement>(null);
   const cleanPhone = phone.replace(/\D/g, '').slice(-10);
 
-  // Pre-load payment configuration from server on mount
-  useEffect(() => {
-    let isMounted = true;
+  // Sync payment configuration from server on mount & on live updates
+  const refreshPaymentConfig = () => {
     fetchPaymentConfig().then((cfg) => {
-      if (isMounted && cfg && cfg.paymentPageUrl) {
+      if (cfg && cfg.paymentPageUrl) {
         const clean = normalizePaymentUrl(cfg.paymentPageUrl);
         if (isValidExternalUrl(clean)) {
           setConfiguredPaymentUrl(clean);
+          try {
+            localStorage.setItem('wcm_cached_payment_url', clean);
+          } catch {
+            // ignore
+          }
+        } else {
+          setConfiguredPaymentUrl('');
         }
       }
     });
+  };
+
+  useEffect(() => {
+    refreshPaymentConfig();
+
+    const handleSettingsUpdated = (e: any) => {
+      if (e?.detail?.razorpayPaymentPageUrl) {
+        const clean = normalizePaymentUrl(e.detail.razorpayPaymentPageUrl);
+        setConfiguredPaymentUrl(clean);
+        try {
+          localStorage.setItem('wcm_cached_payment_url', clean);
+        } catch {
+          // ignore
+        }
+      } else {
+        refreshPaymentConfig();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      refreshPaymentConfig();
+    };
+
+    window.addEventListener('wcm_settings_updated', handleSettingsUpdated);
+    window.addEventListener('storage', refreshPaymentConfig);
+    window.addEventListener('focus', handleWindowFocus);
+
     return () => {
-      isMounted = false;
+      window.removeEventListener('wcm_settings_updated', handleSettingsUpdated);
+      window.removeEventListener('storage', refreshPaymentConfig);
+      window.removeEventListener('focus', handleWindowFocus);
     };
   }, []);
 
-  // Multi-tier navigation execution to handle browser popups and iframes
+  // Compute active target URL
+  const activePaymentPageUrl = configuredPaymentUrl || externalPaymentUrl || '';
+  const effectiveDestinationUrl = isValidExternalUrl(activePaymentPageUrl)
+    ? buildDestinationUrl(activePaymentPageUrl, fullName, cleanPhone, email)
+    : '';
+
+  // Background registration logger to ensure customer lead is saved in Google Sheets & Admin
+  const logRegistrationInBackground = async (nameVal?: string, phoneVal?: string, emailVal?: string) => {
+    const p = (phoneVal || cleanPhone || '9999999999').replace(/\D/g, '').slice(-10);
+    try {
+      await submitRegistration({
+        name: (nameVal || fullName).trim() || 'Visitor (CTA Click)',
+        phone: p.length === 10 ? p : '9999999999',
+        email: (emailVal || email).trim() || '',
+        city: city.trim() || '',
+        state: state.trim() || 'Maharashtra',
+      });
+    } catch (e) {
+      console.warn('Background registration log:', e);
+    }
+  };
+
+  // Immediate click handler for native <a> tag CTA
+  const handleNativeCtaClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    setHasInitiatedRedirect(true);
+    setExternalPaymentUrl(effectiveDestinationUrl || activePaymentPageUrl);
+
+    // Save lead in background
+    logRegistrationInBackground(fullName, cleanPhone, email);
+
+    // Auto scroll confirmation into view
+    setTimeout(() => {
+      redirectContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 200);
+  };
+
+  // Multi-tier navigation execution to handle browser popups and iframes safely
   const executeRedirect = (destUrl: string): boolean => {
+    if (!destUrl) return false;
     // 1. Try standard window.open first (opens clean new tab)
     try {
       const win = window.open(destUrl, '_blank', 'noopener,noreferrer');
@@ -181,17 +279,15 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
       // Cross-origin iframe sandbox blocks window.top access
     }
 
-    // 3. Fallback: navigate current window
+    // 3. Fallback: navigate current window if not inside an iframe
     try {
-      window.location.assign(destUrl);
-      return true;
-    } catch {
-      try {
-        window.location.href = destUrl;
+      const isInsideIframe = window.self !== window.top;
+      if (!isInsideIframe) {
+        window.location.assign(destUrl);
         return true;
-      } catch (e) {
-        console.warn('window.location failed', e);
       }
+    } catch {
+      // Safe fallback: UI presents clear clickable CTA button
     }
 
     return false;
@@ -201,7 +297,28 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
-    setExternalPaymentUrl(null);
+
+    // If external payment URL is configured, clicking submit should immediately redirect!
+    if (isValidExternalUrl(activePaymentPageUrl)) {
+      const destUrl = effectiveDestinationUrl || buildDestinationUrl(activePaymentPageUrl, fullName, cleanPhone, email);
+      setExternalPaymentUrl(destUrl);
+      setHasInitiatedRedirect(true);
+
+      // Execute synchronous redirect immediately
+      executeRedirect(destUrl);
+
+      // Save registration asynchronously
+      if (cleanPhone.length === 10) {
+        submitRegistration({
+          name: fullName.trim() || 'Valued Testator',
+          phone: cleanPhone,
+          email: email.trim(),
+          city: city.trim(),
+          state: state.trim(),
+        }).catch(console.warn);
+      }
+      return;
+    }
 
     if (!fullName.trim()) {
       setErrorMsg('Please enter your full name.');
@@ -228,17 +345,6 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
       return;
     }
 
-    // Synchronously prepare payment tab on user click to bypass popup blockers
-    const activeUrl = configuredPaymentUrl;
-    let preOpenedTab: Window | null = null;
-    if (isValidExternalUrl(activeUrl)) {
-      try {
-        preOpenedTab = window.open('about:blank', '_blank');
-      } catch {
-        preOpenedTab = null;
-      }
-    }
-
     setIsSubmitting(true);
     try {
       const regData: TestatorRegistration = {
@@ -253,16 +359,14 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
       setIsSubmitting(false);
 
       if (!result.success) {
-        if (preOpenedTab && !preOpenedTab.closed) preOpenedTab.close();
         setErrorMsg(result.error || 'Registration could not be completed. Please try again.');
         return;
       }
 
       setVerificationResult(result);
 
-      // If user has already paid, close preopened tab and enter directly!
+      // If user has already paid, enter directly!
       if (result.isPaid) {
-        if (preOpenedTab && !preOpenedTab.closed) preOpenedTab.close();
         setTimeout(() => {
           onEnterDrafter({
             name: fullName.trim(),
@@ -277,30 +381,18 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
         return;
       }
 
-      // Unpaid testator: redirect to configured Razorpay Payment Page URL
+      // Unpaid testator: ensure external payment URL is set and scrolled into view
       const targetUrl = result.paymentPageUrl || configuredPaymentUrl;
-
       if (isValidExternalUrl(targetUrl)) {
         const destUrl = buildDestinationUrl(targetUrl, fullName, cleanPhone, email);
         setExternalPaymentUrl(destUrl);
+        setHasInitiatedRedirect(true);
+        executeRedirect(destUrl);
 
-        // If pre-opened tab exists and is alive, navigate it!
-        if (preOpenedTab && !preOpenedTab.closed) {
-          try {
-            preOpenedTab.location.href = destUrl;
-          } catch {
-            executeRedirect(destUrl);
-          }
-        } else {
-          executeRedirect(destUrl);
-        }
-
-        // Scroll prompt into view
         setTimeout(() => {
           redirectContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
       } else {
-        if (preOpenedTab && !preOpenedTab.closed) preOpenedTab.close();
         // Open built-in secure in-app Razorpay payment checkout modal
         onOpenPricingModal({
           name: fullName.trim(),
@@ -309,7 +401,6 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
         });
       }
     } catch (err: any) {
-      if (preOpenedTab && !preOpenedTab.closed) preOpenedTab.close();
       setIsSubmitting(false);
       setErrorMsg(err?.message || 'An error occurred during submission.');
     }
@@ -323,6 +414,28 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
     const inputVal = existingClientInput.trim();
     if (!inputVal) {
       setExistingClientError('Please enter your 10-digit mobile number or license key.');
+      return;
+    }
+
+    // Direct Admin Demo Mode Shortcut: If admin enters PIN (8492) or DEMO/ADMIN
+    if (
+      verifyAdminPin(inputVal) ||
+      inputVal.toUpperCase() === 'ADMIN' ||
+      inputVal.toUpperCase() === 'DEMO'
+    ) {
+      if (onLaunchDemo) {
+        onLaunchDemo('sample');
+      } else {
+        onEnterDrafter({
+          name: 'Rajesh Narayan Sharma (Admin Demo)',
+          phone: '9822012345',
+          email: 'admin@wealthcreationmatrix.com',
+          city: 'Pune',
+          state: 'Maharashtra',
+          licenseKey: 'ADMIN-DEMO-ACCESS',
+          isPaid: true,
+        });
+      }
       return;
     }
 
@@ -413,6 +526,22 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
             A guided, easy-to-use assistant to catalog family assets, document your distribution
             wishes, and generate a clean, organized draft ready for your review.
           </p>
+
+          {/* Quick 1-Click Fast Checkout CTA in Hero */}
+          {isValidExternalUrl(activePaymentPageUrl) && (
+            <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <a
+                href={effectiveDestinationUrl || activePaymentPageUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={handleNativeCtaClick}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-stone-950 font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-amber-500/30 transition-all cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4 text-stone-950" />
+                <span>Buy The Will Blueprint Now (₹1,999) →</span>
+              </a>
+            </div>
+          )}
         </div>
 
         {/* Sign Up Form Card */}
@@ -452,7 +581,7 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
           )}
 
           {/* Payment Link & Instant Checkout Card */}
-          {externalPaymentUrl && (
+          {(externalPaymentUrl || hasInitiatedRedirect) && (
             <div
               ref={redirectContainerRef}
               className="mb-5 p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-950/90 to-stone-950 border-2 border-amber-500 text-amber-100 shadow-2xl animate-in fade-in duration-200"
@@ -464,21 +593,21 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                      Redirecting to Razorpay Checkout
+                      Redirected to Razorpay Checkout
                     </h4>
                     <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-mono font-bold">
-                      Lead Recorded
+                      Tab Opened
                     </span>
                   </div>
                   <p className="text-xs text-amber-200/90 mt-1 leading-relaxed">
-                    Your registration for <strong>+91 {cleanPhone}</strong> is saved. If the payment page did not open in a new tab automatically, click the button below:
+                    A new tab has opened with your Razorpay payment checkout. If the payment page did not open in a new tab automatically, click the button below:
                   </p>
                 </div>
               </div>
 
               <div className="mt-4 pt-3 border-t border-amber-500/30 space-y-2">
                 <a
-                  href={externalPaymentUrl}
+                  href={effectiveDestinationUrl || externalPaymentUrl || activePaymentPageUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-stone-950 font-bold text-xs uppercase tracking-wider transition-all shadow-md text-center cursor-pointer animate-pulse"
@@ -651,16 +780,37 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
             </div>
 
             {/* Primary Submit / Payment CTA Button */}
-            {externalPaymentUrl ? (
-              <a
-                href={externalPaymentUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full mt-3 flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-stone-950 font-bold text-xs uppercase tracking-wider transition-all shadow-lg hover:shadow-amber-500/20 text-center cursor-pointer animate-pulse"
-              >
-                <CreditCard className="w-4 h-4 text-stone-950" />
-                <span>Proceed to Razorpay Payment Page (₹1,999) →</span>
-              </a>
+            {isValidExternalUrl(activePaymentPageUrl) ? (
+              <div className="space-y-2.5 mt-4">
+                <a
+                  href={effectiveDestinationUrl || activePaymentPageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={handleNativeCtaClick}
+                  className="w-full flex items-center justify-center gap-2.5 px-6 py-4 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-stone-950 font-bold text-sm uppercase tracking-wider transition-all shadow-xl hover:shadow-amber-500/25 text-center cursor-pointer group"
+                >
+                  <CreditCard className="w-4 h-4 text-stone-950 shrink-0" />
+                  <span>Buy The Will Blueprint Now (₹1,999)</span>
+                  <ArrowRight className="w-4 h-4 text-stone-950 group-hover:translate-x-1 transition-transform shrink-0" />
+                </a>
+
+                <div className="flex items-center justify-between text-[11px] text-stone-400 px-1">
+                  <span className="flex items-center gap-1 text-emerald-400">
+                    <Shield className="w-3 h-3 text-emerald-400" />
+                    <span>256-bit SSL Razorpay Secure</span>
+                  </span>
+                  <a
+                    href={effectiveDestinationUrl || activePaymentPageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={handleNativeCtaClick}
+                    className="text-amber-300 hover:text-amber-200 hover:underline inline-flex items-center gap-1"
+                  >
+                    <span>Direct Payment Page</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
             ) : (
               <button
                 type="submit"
@@ -670,7 +820,7 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
                 {isSubmitting ? (
                   <>
                     <div className="w-4 h-4 border-2 border-stone-900 border-t-transparent rounded-full animate-spin" />
-                    <span>Redirecting to Razorpay...</span>
+                    <span>Opening Razorpay Checkout...</span>
                   </>
                 ) : (
                   <>
@@ -679,21 +829,6 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
                   </>
                 )}
               </button>
-            )}
-
-            {/* Direct Link Option when configured */}
-            {configuredPaymentUrl && !externalPaymentUrl && (
-              <div className="pt-2 text-center">
-                <a
-                  href={buildDestinationUrl(configuredPaymentUrl, fullName, cleanPhone, email)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-[11px] text-amber-300/80 hover:text-amber-200 hover:underline transition-colors cursor-pointer"
-                >
-                  <ExternalLink className="w-3 h-3 text-amber-400" />
-                  <span>Or open dedicated Razorpay Payment Page directly ↗</span>
-                </a>
-              </div>
             )}
           </form>
         </div>
@@ -745,10 +880,12 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
             <span>© {new Date().getFullYear()} Wealth Creation Matrix</span>
             <span>•</span>
             <button
+              type="button"
               onClick={onOpenAdmin}
-              className="text-stone-600 hover:text-stone-400 transition-colors"
+              className="text-stone-600 hover:text-stone-400 transition-colors inline-flex items-center gap-1 cursor-pointer"
             >
-              Admin Access
+              <Lock className="w-3 h-3 text-stone-600" />
+              <span>Admin Access</span>
             </button>
           </div>
         </div>

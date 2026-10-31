@@ -14,7 +14,7 @@ import { AdminPinModal } from './components/AdminPinModal';
 import { LegalOrientationModal } from './components/LegalOrientationModal';
 import { RegistrationLandingPage } from './components/RegistrationLandingPage';
 import { WillData } from './types/will';
-import { INITIAL_EMPTY_WILL_DATA } from './utils/sampleData';
+import { INITIAL_EMPTY_WILL_DATA, SAMPLE_COMPLIANT_WILL } from './utils/sampleData';
 import { validateWillData } from './utils/validation';
 import {
   isDemoModeActive,
@@ -223,11 +223,48 @@ export default function App() {
     setDemoModeActive(nextVal);
   };
 
+  const handleLaunchDemo = (mode: 'sample' | 'blank' = 'sample') => {
+    setIsAdmin(true);
+    setIsDemoMode(true);
+    setDemoModeActive(true);
+    setIsPaid(true);
+    setIsConsumed(false);
+    setCreditsRemaining(999);
+    setIsTrainingCompleted(true);
+    setIsAdminPinOpen(false);
+
+    if (mode === 'sample') {
+      setData(SAMPLE_COMPLIANT_WILL);
+      setVerifiedPhone('9822012345');
+    } else {
+      setData({
+        ...INITIAL_EMPTY_WILL_DATA,
+        testator: {
+          ...INITIAL_EMPTY_WILL_DATA.testator,
+          fullName: 'Demo Client Session',
+          mobile: '9876543210',
+          email: 'demo@wealthcreationmatrix.com',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+        },
+      });
+      setVerifiedPhone('9876543210');
+    }
+
+    setViewMode('drafter');
+    setStatusNotification({
+      type: 'success',
+      text:
+        mode === 'sample'
+          ? '🌟 Client Demo Mode Active — Pre-loaded with compliant Indian Succession Act Will (Rajesh Sharma) for live walkthrough.'
+          : '✍️ Client Demo Mode Active — Fresh session ready for live client demonstration.',
+    });
+  };
+
   const handleAdminUnlocked = () => {
     setIsAdmin(true);
     setIsDemoMode(true);
     setDemoModeActive(true);
-    setViewMode('drafter');
   };
 
   const handleReset = () => {
@@ -495,6 +532,7 @@ export default function App() {
         <RegistrationLandingPage
           onEnterDrafter={handleEnterDrafterFromRegistration}
           onOpenAdmin={() => setIsAdminPinOpen(true)}
+          onLaunchDemo={handleLaunchDemo}
           onOpenPricingModal={(info) => {
             if (info) {
               setData((prev) => ({
@@ -546,6 +584,7 @@ export default function App() {
           onClose={() => setIsAdminPinOpen(false)}
           onSuccess={handleAdminUnlocked}
           isAdmin={isAdmin}
+          onLaunchDemo={handleLaunchDemo}
         />
       </div>
     );
@@ -673,6 +712,7 @@ export default function App() {
         onClose={() => setIsAdminPinOpen(false)}
         onSuccess={handleAdminUnlocked}
         isAdmin={isAdmin}
+        onLaunchDemo={handleLaunchDemo}
       />
 
       {/* Step 1 & Step 2 JSON Inspector Modal */}

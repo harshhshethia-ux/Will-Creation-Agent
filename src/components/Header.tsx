@@ -10,6 +10,7 @@ import {
   Lock,
   FileEdit,
   GraduationCap,
+  Sliders,
 } from 'lucide-react';
 import { StatusType } from '../types/will';
 import { WealthCreationLogo } from './WealthCreationLogo';
@@ -79,22 +80,33 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Demo Mode Toggle - ONLY VISIBLE TO AUTHENTICATED ADMINISTRATOR */}
             {isAdmin ? (
-              <button
-                onClick={onToggleDemoMode}
-                title={
-                  isDemoMode
-                    ? 'Admin Demo Mode Active: Unlimited trial runs allowed. Click to test Strict 1-Time limit.'
-                    : 'Strict Mode: 1-time limit enforced per mobile number.'
-                }
-                className={`text-[11px] font-mono px-2.5 py-1 rounded border flex items-center gap-1.5 transition-colors cursor-pointer ${
-                  isDemoMode
-                    ? 'bg-amber-950/70 text-amber-300 border-amber-700/80 hover:bg-amber-900/80'
-                    : 'bg-stone-800/80 text-stone-400 border-stone-700 hover:text-stone-200'
-                }`}
-              >
-                <Sparkles className="w-3 h-3 text-amber-400" />
-                <span>{isDemoMode ? 'Admin Demo: ON' : 'Strict Mode: ON'}</span>
-              </button>
+              <>
+                <button
+                  onClick={onOpenAdminPin}
+                  title="Open Admin Control Desk, Restrictions & Settings"
+                  className="text-[11px] font-medium px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Sliders className="w-3 h-3 text-amber-400" />
+                  <span className="hidden sm:inline">Admin Desk</span>
+                </button>
+
+                <button
+                  onClick={onToggleDemoMode}
+                  title={
+                    isDemoMode
+                      ? 'Admin Demo Mode Active: Unlimited trial runs allowed. Click to test Strict 1-Time limit.'
+                      : 'Strict Mode: 1-time limit enforced per mobile number.'
+                  }
+                  className={`text-[11px] font-mono px-2.5 py-1 rounded border flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    isDemoMode
+                      ? 'bg-amber-950/70 text-amber-300 border-amber-700/80 hover:bg-amber-900/80'
+                      : 'bg-stone-800/80 text-stone-400 border-stone-700 hover:text-stone-200'
+                  }`}
+                >
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <span>{isDemoMode ? 'Admin Demo: ON' : 'Strict Mode: ON'}</span>
+                </button>
+              </>
             ) : null}
 
             {status === 'LAWYER_REVIEW_REQUIRED' && (

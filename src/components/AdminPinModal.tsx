@@ -23,6 +23,8 @@ import {
   Table,
   Download,
   Users,
+  Sparkles,
+  PlayCircle,
 } from 'lucide-react';
 import { verifyAdminPin, ADMIN_MASTER_PIN } from '../services/verificationService';
 import {
@@ -38,6 +40,7 @@ interface AdminPinModalProps {
   onClose: () => void;
   onSuccess: () => void;
   isAdmin?: boolean;
+  onLaunchDemo?: (mode?: 'sample' | 'blank') => void;
 }
 
 export const AdminPinModal: React.FC<AdminPinModalProps> = ({
@@ -45,6 +48,7 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
   onClose,
   onSuccess,
   isAdmin = false,
+  onLaunchDemo,
 }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -128,11 +132,15 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
     }
   };
 
-  const handleSubmitPin = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmitPin = (e?: React.FormEvent, directDemoMode?: 'sample' | 'blank') => {
+    if (e) e.preventDefault();
     if (verifyAdminPin(pin)) {
-      onSuccess();
       setError('');
+      if (directDemoMode && onLaunchDemo) {
+        onLaunchDemo(directDemoMode);
+      } else {
+        onSuccess();
+      }
     } else {
       setError('Incorrect administrator PIN code.');
     }
@@ -215,8 +223,18 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
 
     setIsSavingSettings(false);
     if (res && res.success) {
-      setSettingsSuccessMsg('Settings and Payment Page restrictions saved successfully!');
-      setTimeout(() => setSettingsSuccessMsg(''), 4000);
+      try {
+        localStorage.setItem('wcm_cached_payment_url', cleanPaymentUrl);
+        window.dispatchEvent(
+          new CustomEvent('wcm_settings_updated', {
+            detail: { razorpayPaymentPageUrl: cleanPaymentUrl },
+          })
+        );
+      } catch {
+        // ignore
+      }
+      setSettingsSuccessMsg('✓ Razorpay CTA link and restrictions saved! The Landing Page CTA now immediately redirects to this link.');
+      setTimeout(() => setSettingsSuccessMsg(''), 5000);
       loadLedgerAndSettings();
     } else {
       setError(res?.error || 'Failed to update settings');
@@ -261,19 +279,32 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
               {isAdmin ? 'Licensing & Razorpay Multi-Page Control Desk' : 'Administrator Master Access'}
             </h3>
           </div>
-          <button
-            onClick={onClose}
-            className="text-stone-400 hover:text-stone-700 p-1 cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {isAdmin && onLaunchDemo && (
+              <button
+                type="button"
+                onClick={() => onLaunchDemo('sample')}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-amber-900 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                title="Directly launch the Will Assistant in Demo Mode for client presentation"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                <span className="hidden sm:inline">Launch Client Demo</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="text-stone-400 hover:text-stone-700 p-1 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {!isAdmin ? (
           /* STEP 1: Enter PIN to unlock admin privileges */
-          <form onSubmit={handleSubmitPin} className="space-y-4">
+          <form onSubmit={(e) => handleSubmitPin(e)} className="space-y-4">
             <p className="text-xs text-stone-600 leading-relaxed">
-              Enter the Master Admin PIN to unlock Razorpay Payment Page restrictions, custom domain routing, training orientation policies, and live license ledger.
+              Enter the master administrator PIN code to access licensing controls, payment page settings, and launch client demonstration walkthroughs.
             </p>
 
             <div>
@@ -284,7 +315,7 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
                 type="password"
                 autoFocus
                 maxLength={6}
-                placeholder="Enter PIN (Default: 8492)"
+                placeholder="Enter PIN"
                 value={pin}
                 onChange={(e) => {
                   setPin(e.target.value);
@@ -300,29 +331,86 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
               )}
             </div>
 
-            <div className="flex gap-2">
+            <div className="space-y-2 pt-1">
               <button
                 type="button"
-                onClick={onClose}
-                className="py-2 px-3 border border-stone-300 hover:bg-stone-50 rounded-lg text-xs font-medium text-stone-700 cursor-pointer"
+                onClick={(e) => handleSubmitPin(e, 'sample')}
+                className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-stone-950 font-bold rounded-lg text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
               >
-                Cancel
+                <Sparkles className="w-4 h-4 text-stone-950" />
+                <span>🚀 Launch Will Assistant (Client Demo Mode)</span>
               </button>
-              <button
-                type="submit"
-                className="flex-1 py-2 px-4 bg-stone-900 text-amber-100 hover:bg-stone-800 rounded-lg text-xs font-semibold cursor-pointer"
-              >
-                Unlock Administrator Mode
-              </button>
-            </div>
 
-            <div className="pt-2 border-t border-stone-100 text-[11px] text-stone-400 text-center">
-              Default Master PIN: <span className="font-mono font-bold text-stone-600">8492</span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="py-2 px-3 border border-stone-300 hover:bg-stone-50 rounded-lg text-xs font-medium text-stone-700 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 px-4 bg-stone-900 text-amber-100 hover:bg-stone-800 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Open Admin Control Desk</span>
+                </button>
+              </div>
             </div>
           </form>
         ) : (
           /* STEP 2: Authenticated Admin Dashboard */
           <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+            {/* Direct Client Demonstration Launcher */}
+            <div className="bg-gradient-to-r from-stone-900 via-amber-950 to-stone-950 border border-amber-600/50 rounded-xl p-3.5 text-amber-100 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0 mt-0.5">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <span>Client Demonstration Studio</span>
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-mono">
+                        Direct Access
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-amber-200/80 mt-0.5">
+                      Directly open the Will Creator Assistant to demonstrate the interview, clauses, and watermark-free PDF to clients without restrictions.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onLaunchDemo) onLaunchDemo('sample');
+                      else onClose();
+                    }}
+                    className="px-3 py-2 rounded-lg bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-yellow-400 text-stone-950 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                    title="Launch drafter pre-loaded with compliant Indian Succession Act Will (Rajesh Sharma)"
+                  >
+                    <PlayCircle className="w-3.5 h-3.5 text-stone-950" />
+                    <span>Demo Compliant Will</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onLaunchDemo) onLaunchDemo('blank');
+                      else onClose();
+                    }}
+                    className="px-3 py-2 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-200 border border-stone-600 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                    title="Launch fresh blank drafter in Demo Mode to type client details live"
+                  >
+                    <FileEdit className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Blank Live Demo</span>
+                  </button>
+                </div>
+              </div>
+            </div>
             {/* Nav Tabs */}
             <div className="flex border-b border-stone-200 text-xs font-semibold">
               <button

@@ -11,7 +11,7 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = parseInt(process.env.PORT || '3000', 10);
+const PORT = process.env.PORT && process.env.PORT !== '8080' ? parseInt(process.env.PORT, 10) : 3000;
 const isProd = process.env.NODE_ENV === 'production';
 
 // Admin credentials
@@ -167,9 +167,7 @@ function loadDataFromDisk() {
       appSettings = { ...appSettings, ...JSON.parse(data) };
       if (appSettings.razorpayPaymentPageUrl) {
         let clean = appSettings.razorpayPaymentPageUrl.trim();
-        if (clean.includes('will-blueprint-now') || clean.includes('example.com')) {
-          clean = '';
-        } else if (clean && !clean.startsWith('http://') && !clean.startsWith('https://')) {
+        if (clean && !clean.startsWith('http://') && !clean.startsWith('https://')) {
           clean = 'https://' + clean;
         }
         appSettings.razorpayPaymentPageUrl = clean;
@@ -285,9 +283,6 @@ async function startServer() {
       let cleanPaymentUrl = (settings.razorpayPaymentPageUrl || '').trim();
       if (cleanPaymentUrl && !cleanPaymentUrl.startsWith('http://') && !cleanPaymentUrl.startsWith('https://')) {
         cleanPaymentUrl = 'https://' + cleanPaymentUrl;
-      }
-      if (cleanPaymentUrl.includes('will-blueprint-now') || cleanPaymentUrl.includes('example.com')) {
-        cleanPaymentUrl = '';
       }
 
       let cleanCustomDomain = (settings.customDomainUrl || '').trim();
@@ -1016,10 +1011,7 @@ async function startServer() {
       licenseKey: record.licenseKey,
       creditsRemaining,
       trainingCompleted: matchedLicense ? matchedLicense.trainingCompleted : !appSettings.requireTrainingOrientation,
-      paymentPageUrl:
-        appSettings.razorpayPaymentPageUrl && !appSettings.razorpayPaymentPageUrl.includes('will-blueprint-now')
-          ? appSettings.razorpayPaymentPageUrl
-          : '',
+      paymentPageUrl: appSettings.razorpayPaymentPageUrl || '',
       message: record.paymentStatus === 'paid'
         ? `Payment verified! License ${record.licenseKey} is active for +91 ${cleanPhone}. Entering Drafting Assistant.`
         : `Registration saved for +91 ${cleanPhone}. Please complete payment of ₹1,999 to enter the Drafting Assistant.`,
