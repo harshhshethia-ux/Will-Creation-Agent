@@ -165,8 +165,14 @@ function loadDataFromDisk() {
     if (fs.existsSync(SETTINGS_FILE)) {
       const data = fs.readFileSync(SETTINGS_FILE, 'utf-8');
       appSettings = { ...appSettings, ...JSON.parse(data) };
-      if (appSettings.razorpayPaymentPageUrl && appSettings.razorpayPaymentPageUrl.includes('will-blueprint-now')) {
-        appSettings.razorpayPaymentPageUrl = '';
+      if (appSettings.razorpayPaymentPageUrl) {
+        let clean = appSettings.razorpayPaymentPageUrl.trim();
+        if (clean.includes('will-blueprint-now') || clean.includes('example.com')) {
+          clean = '';
+        } else if (clean && !clean.startsWith('http://') && !clean.startsWith('https://')) {
+          clean = 'https://' + clean;
+        }
+        appSettings.razorpayPaymentPageUrl = clean;
       }
     }
   } catch (e) {
@@ -246,6 +252,18 @@ async function startServer() {
       totalLicenses: Object.keys(licenses).length,
       allowedPagesCount: appSettings.allowedRazorpayPageIds.length,
       requireTraining: appSettings.requireTrainingOrientation,
+      hasPaymentUrl: Boolean(appSettings.razorpayPaymentPageUrl),
+    });
+  });
+
+  // 1b. Public Payment Configuration (for landing page direct CTA)
+  app.get('/api/payment-config', (_req: Request, res: Response) => {
+    return res.json({
+      success: true,
+      paymentPageUrl: appSettings.razorpayPaymentPageUrl || '',
+      customDomainUrl: appSettings.customDomainUrl || '',
+      amount: 1999,
+      requireTrainingOrientation: appSettings.requireTrainingOrientation,
     });
   });
 
@@ -264,6 +282,19 @@ async function startServer() {
     }
 
     if (settings) {
+      let cleanPaymentUrl = (settings.razorpayPaymentPageUrl || '').trim();
+      if (cleanPaymentUrl && !cleanPaymentUrl.startsWith('http://') && !cleanPaymentUrl.startsWith('https://')) {
+        cleanPaymentUrl = 'https://' + cleanPaymentUrl;
+      }
+      if (cleanPaymentUrl.includes('will-blueprint-now') || cleanPaymentUrl.includes('example.com')) {
+        cleanPaymentUrl = '';
+      }
+
+      let cleanCustomDomain = (settings.customDomainUrl || '').trim();
+      if (cleanCustomDomain && !cleanCustomDomain.startsWith('http://') && !cleanCustomDomain.startsWith('https://')) {
+        cleanCustomDomain = 'https://' + cleanCustomDomain;
+      }
+
       appSettings = {
         ...appSettings,
         allowedRazorpayPageIds: Array.isArray(settings.allowedRazorpayPageIds)
@@ -272,12 +303,12 @@ async function startServer() {
         filterKeywords: Array.isArray(settings.filterKeywords)
           ? settings.filterKeywords.map((s: string) => s.trim().toLowerCase()).filter(Boolean)
           : appSettings.filterKeywords,
-        customDomainUrl: (settings.customDomainUrl || '').trim(),
+        customDomainUrl: cleanCustomDomain,
         requireTrainingOrientation: settings.requireTrainingOrientation !== undefined
           ? Boolean(settings.requireTrainingOrientation)
           : appSettings.requireTrainingOrientation,
         externalTrainingUrl: (settings.externalTrainingUrl || '').trim(),
-        razorpayPaymentPageUrl: (settings.razorpayPaymentPageUrl || '').trim(),
+        razorpayPaymentPageUrl: cleanPaymentUrl,
       };
       saveSettingsToDisk();
     }

@@ -622,6 +622,30 @@ export async function fetchServerSettings(): Promise<any> {
 }
 
 /**
+ * Public API: Fetch payment configuration (payment page URL, custom domain).
+ */
+export async function fetchPaymentConfig(): Promise<{
+  success: boolean;
+  paymentPageUrl: string;
+  customDomainUrl?: string;
+  amount?: number;
+}> {
+  try {
+    const res = await fetch('/api/payment-config');
+    const data = await res.json();
+    return {
+      success: true,
+      paymentPageUrl: data?.paymentPageUrl || '',
+      customDomainUrl: data?.customDomainUrl || '',
+      amount: data?.amount || 1999,
+    };
+  } catch (err) {
+    console.warn('Failed to fetch payment config', err);
+    return { success: false, paymentPageUrl: '' };
+  }
+}
+
+/**
  * Admin API: Save server app settings.
  */
 export async function updateServerSettings(settings: any, adminPin: string): Promise<any> {

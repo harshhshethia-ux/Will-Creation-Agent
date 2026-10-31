@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   CheckCircle2,
   CreditCard,
@@ -11,10 +11,12 @@ import {
   User,
   Shield,
   Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 import { WealthCreationLogo } from './WealthCreationLogo';
 import {
   submitRegistration,
+  fetchPaymentConfig,
   TestatorRegistration,
   RegistrationResponse,
 } from '../services/razorpayService';
@@ -72,6 +74,45 @@ interface RegistrationLandingPageProps {
   existingName?: string;
 }
 
+// Normalizes URL to guarantee https:// protocol
+export const normalizePaymentUrl = (url?: string | null): string => {
+  if (!url) return '';
+  let clean = url.trim();
+  if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+    clean = 'https://' + clean;
+  }
+  return clean;
+};
+
+// Verifies if custom external Razorpay page is valid
+export const isValidExternalUrl = (url?: string | null): boolean => {
+  if (!url) return false;
+  const clean = normalizePaymentUrl(url);
+  const lower = clean.toLowerCase();
+  if (lower.includes('will-blueprint-now') || lower.includes('example.com')) return false;
+  if (lower === 'https://pages.razorpay.com' || lower === 'https://pages.razorpay.com/') return false;
+  try {
+    const parsed = new URL(clean);
+    return Boolean(parsed.hostname && parsed.hostname.includes('.'));
+  } catch {
+    return false;
+  }
+};
+
+// Constructs destination URL with customer details pre-filled for Razorpay
+export const buildDestinationUrl = (baseUrl: string, name: string, phone: string, email: string): string => {
+  const norm = normalizePaymentUrl(baseUrl);
+  try {
+    const u = new URL(norm);
+    if (name.trim()) u.searchParams.set('name', name.trim());
+    if (phone.trim()) u.searchParams.set('phone', phone.trim());
+    if (email.trim()) u.searchParams.set('email', email.trim());
+    return u.toString();
+  } catch {
+    return norm;
+  }
+};
+
 export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = ({
   onEnterDrafter,
   onOpenAdmin,
@@ -92,26 +133,71 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
   const [isVerifyingExisting, setIsVerifyingExisting] = useState(false);
   const [existingClientError, setExistingClientError] = useState<string | null>(null);
 
-  // Submission state
+  // Submission & payment configuration state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [verificationResult, setVerificationResult] = useState<RegistrationResponse | null>(null);
-
-  const cleanPhone = phone.replace(/\D/g, '').slice(-10);
-
-  // Helper to verify if custom external Razorpay page is configured
-  const isValidExternalUrl = (url?: string | null): boolean => {
-    if (!url) return false;
-    const clean = url.trim().toLowerCase();
-    if (!clean.startsWith('http')) return false;
-    if (clean.includes('will-blueprint-now') || clean.includes('example.com')) return false;
-    if (clean === 'https://pages.razorpay.com' || clean === 'https://pages.razorpay.com/') return false;
-    return true;
-  };
-
+  const [configuredPaymentUrl, setConfiguredPaymentUrl] = useState<string>('');
   const [externalPaymentUrl, setExternalPaymentUrl] = useState<string | null>(null);
 
-  // Handle standard registration submission
+  const redirectContainerRef = useRef<HTMLDivElement>(null);
+  const cleanPhone = phone.replace(/\D/g, '').slice(-10);
+
+  // Pre-load payment configuration from server on mount
+  useEffect(() => {
+    let isMounted = true;
+    fetchPaymentConfig().then((cfg) => {
+      if (isMounted && cfg && cfg.paymentPageUrl) {
+        const clean = normalizePaymentUrl(cfg.paymentPageUrl);
+        if (isValidExternalUrl(clean)) {
+          setConfiguredPaymentUrl(clean);
+        }
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Multi-tier navigation execution to handle browser popups and iframes
+  const executeRedirect = (destUrl: string): boolean => {
+    // 1. Try standard window.open first (opens clean new tab)
+    try {
+      const win = window.open(destUrl, '_blank', 'noopener,noreferrer');
+      if (win && !win.closed) {
+        return true;
+      }
+    } catch (err) {
+      console.warn('window.open blocked or restricted', err);
+    }
+
+    // 2. Try top-level navigation if app is running inside an iframe
+    try {
+      if (window.top && window.top !== window) {
+        window.top.location.href = destUrl;
+        return true;
+      }
+    } catch {
+      // Cross-origin iframe sandbox blocks window.top access
+    }
+
+    // 3. Fallback: navigate current window
+    try {
+      window.location.assign(destUrl);
+      return true;
+    } catch {
+      try {
+        window.location.href = destUrl;
+        return true;
+      } catch (e) {
+        console.warn('window.location failed', e);
+      }
+    }
+
+    return false;
+  };
+
+  // Handle standard registration submission and payment redirection
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -142,6 +228,17 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
       return;
     }
 
+    // Synchronously prepare payment tab on user click to bypass popup blockers
+    const activeUrl = configuredPaymentUrl;
+    let preOpenedTab: Window | null = null;
+    if (isValidExternalUrl(activeUrl)) {
+      try {
+        preOpenedTab = window.open('about:blank', '_blank');
+      } catch {
+        preOpenedTab = null;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const regData: TestatorRegistration = {
@@ -156,14 +253,16 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
       setIsSubmitting(false);
 
       if (!result.success) {
+        if (preOpenedTab && !preOpenedTab.closed) preOpenedTab.close();
         setErrorMsg(result.error || 'Registration could not be completed. Please try again.');
         return;
       }
 
       setVerificationResult(result);
 
-      // If user has already paid, enter directly!
+      // If user has already paid, close preopened tab and enter directly!
       if (result.isPaid) {
+        if (preOpenedTab && !preOpenedTab.closed) preOpenedTab.close();
         setTimeout(() => {
           onEnterDrafter({
             name: fullName.trim(),
@@ -175,42 +274,42 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
             isPaid: true,
           });
         }, 1000);
-      } else {
-        // CTA is "Buy The Will Blueprint Now":
-        // Check if an external dedicated Razorpay payment page URL is configured
-        if (isValidExternalUrl(result.paymentPageUrl)) {
-          let destUrl = result.paymentPageUrl!;
-          try {
-            const redirectUrl = new URL(result.paymentPageUrl!);
-            redirectUrl.searchParams.set('name', fullName.trim());
-            redirectUrl.searchParams.set('phone', cleanPhone);
-            if (email.trim()) redirectUrl.searchParams.set('email', email.trim());
-            destUrl = redirectUrl.toString();
-          } catch {
-            destUrl = result.paymentPageUrl!;
-          }
+        return;
+      }
 
-          setExternalPaymentUrl(destUrl);
+      // Unpaid testator: redirect to configured Razorpay Payment Page URL
+      const targetUrl = result.paymentPageUrl || configuredPaymentUrl;
 
-          // Attempt opening in a new tab (prevents iframe frame-ancestors block)
+      if (isValidExternalUrl(targetUrl)) {
+        const destUrl = buildDestinationUrl(targetUrl, fullName, cleanPhone, email);
+        setExternalPaymentUrl(destUrl);
+
+        // If pre-opened tab exists and is alive, navigate it!
+        if (preOpenedTab && !preOpenedTab.closed) {
           try {
-            const opened = window.open(destUrl, '_blank', 'noopener,noreferrer');
-            if (!opened && window.top) {
-              window.top.location.href = destUrl;
-            }
+            preOpenedTab.location.href = destUrl;
           } catch {
-            // Popup blocker may trigger: externalPaymentUrl banner provides direct click
+            executeRedirect(destUrl);
           }
         } else {
-          // Open built-in secure in-app Razorpay payment checkout modal directly
-          onOpenPricingModal({
-            name: fullName.trim(),
-            phone: cleanPhone,
-            email: email.trim(),
-          });
+          executeRedirect(destUrl);
         }
+
+        // Scroll prompt into view
+        setTimeout(() => {
+          redirectContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      } else {
+        if (preOpenedTab && !preOpenedTab.closed) preOpenedTab.close();
+        // Open built-in secure in-app Razorpay payment checkout modal
+        onOpenPricingModal({
+          name: fullName.trim(),
+          phone: cleanPhone,
+          email: email.trim(),
+        });
       }
     } catch (err: any) {
+      if (preOpenedTab && !preOpenedTab.closed) preOpenedTab.close();
       setIsSubmitting(false);
       setErrorMsg(err?.message || 'An error occurred during submission.');
     }
@@ -266,24 +365,11 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
   };
 
   const handlePayNow = () => {
-    const pageUrl = verificationResult?.paymentPageUrl;
+    const pageUrl = verificationResult?.paymentPageUrl || configuredPaymentUrl;
     if (isValidExternalUrl(pageUrl)) {
-      let destUrl = pageUrl!;
-      try {
-        const dest = new URL(pageUrl!);
-        dest.searchParams.set('name', fullName.trim());
-        dest.searchParams.set('phone', cleanPhone);
-        if (email.trim()) dest.searchParams.set('email', email.trim());
-        destUrl = dest.toString();
-      } catch {
-        destUrl = pageUrl!;
-      }
+      const destUrl = buildDestinationUrl(pageUrl, fullName, cleanPhone, email);
       setExternalPaymentUrl(destUrl);
-      try {
-        window.open(destUrl, '_blank', 'noopener,noreferrer');
-      } catch {
-        window.location.href = destUrl;
-      }
+      executeRedirect(destUrl);
       return;
     }
 
@@ -367,30 +453,42 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
 
           {/* Payment Link & Instant Checkout Card */}
           {externalPaymentUrl && (
-            <div className="mb-5 p-4 rounded-xl bg-amber-950/80 border-2 border-amber-500/80 text-amber-100 animate-in fade-in duration-200">
+            <div
+              ref={redirectContainerRef}
+              className="mb-5 p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-950/90 to-stone-950 border-2 border-amber-500 text-amber-100 shadow-2xl animate-in fade-in duration-200"
+            >
               <div className="flex items-start gap-3">
-                <Sparkles className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Registration Details Saved</h4>
-                  <p className="text-xs text-amber-200 mt-1 leading-relaxed">
-                    Complete your payment of ₹1,999 on our official Razorpay checkout page:
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0 mt-0.5">
+                  <CreditCard className="w-4 h-4 text-amber-400" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                      Redirecting to Razorpay Checkout
+                    </h4>
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-mono font-bold">
+                      Lead Recorded
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-200/90 mt-1 leading-relaxed">
+                    Your registration for <strong>+91 {cleanPhone}</strong> is saved. If the payment page did not open in a new tab automatically, click the button below:
                   </p>
                 </div>
               </div>
 
-              <div className="mt-3.5 pt-3 border-t border-amber-800/60 space-y-2">
+              <div className="mt-4 pt-3 border-t border-amber-500/30 space-y-2">
                 <a
                   href={externalPaymentUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-stone-950 font-bold text-xs uppercase tracking-wider transition-all shadow-md text-center cursor-pointer"
+                  className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-stone-950 font-bold text-xs uppercase tracking-wider transition-all shadow-md text-center cursor-pointer animate-pulse"
                 >
                   <CreditCard className="w-4 h-4 text-stone-950" />
-                  <span>Pay ₹1,999 on Razorpay Now</span>
-                  <ArrowRight className="w-4 h-4 text-stone-950" />
+                  <span>Proceed to Razorpay Payment Page (₹1,999) →</span>
                 </a>
 
-                <div className="text-center pt-1">
+                <div className="flex items-center justify-between text-[11px] text-stone-400 pt-1 px-1">
+                  <span>Official Razorpay Secure Checkout</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -400,9 +498,9 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
                         email: email.trim(),
                       });
                     }}
-                    className="text-[11px] text-amber-300/80 hover:text-amber-200 underline cursor-pointer"
+                    className="text-amber-400 hover:text-amber-300 underline cursor-pointer"
                   >
-                    Or open instant in-app checkout popup
+                    Or open in-app popup checkout
                   </button>
                 </div>
               </div>
@@ -552,24 +650,51 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
               </label>
             </div>
 
-            {/* Primary Submit Button */}
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full mt-3 flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-stone-950 font-bold text-xs uppercase tracking-wider transition-all shadow-md hover:shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            >
-              {isSubmitting ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-stone-900 border-t-transparent rounded-full animate-spin" />
-                  <span>Redirecting to Payment...</span>
-                </>
-              ) : (
-                <>
-                  <span>Buy The Will Blueprint Now</span>
-                  <ArrowRight className="w-4 h-4 text-stone-950" />
-                </>
-              )}
-            </button>
+            {/* Primary Submit / Payment CTA Button */}
+            {externalPaymentUrl ? (
+              <a
+                href={externalPaymentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full mt-3 flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-stone-950 font-bold text-xs uppercase tracking-wider transition-all shadow-lg hover:shadow-amber-500/20 text-center cursor-pointer animate-pulse"
+              >
+                <CreditCard className="w-4 h-4 text-stone-950" />
+                <span>Proceed to Razorpay Payment Page (₹1,999) →</span>
+              </a>
+            ) : (
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full mt-3 flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-stone-950 font-bold text-xs uppercase tracking-wider transition-all shadow-md hover:shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-stone-900 border-t-transparent rounded-full animate-spin" />
+                    <span>Redirecting to Razorpay...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Buy The Will Blueprint Now</span>
+                    <ArrowRight className="w-4 h-4 text-stone-950" />
+                  </>
+                )}
+              </button>
+            )}
+
+            {/* Direct Link Option when configured */}
+            {configuredPaymentUrl && !externalPaymentUrl && (
+              <div className="pt-2 text-center">
+                <a
+                  href={buildDestinationUrl(configuredPaymentUrl, fullName, cleanPhone, email)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-[11px] text-amber-300/80 hover:text-amber-200 hover:underline transition-colors cursor-pointer"
+                >
+                  <ExternalLink className="w-3 h-3 text-amber-400" />
+                  <span>Or open dedicated Razorpay Payment Page directly ↗</span>
+                </a>
+              </div>
+            )}
           </form>
         </div>
 
