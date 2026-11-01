@@ -627,21 +627,26 @@ export async function fetchServerSettings(): Promise<any> {
 export async function fetchPaymentConfig(): Promise<{
   success: boolean;
   paymentPageUrl: string;
+  razorpayKeyId?: string;
   customDomainUrl?: string;
   amount?: number;
 }> {
   try {
     const res = await fetch('/api/payment-config');
     const data = await res.json();
+    if (data?.razorpayKeyId) {
+      setCustomRazorpayKeyId(data.razorpayKeyId);
+    }
     return {
       success: true,
       paymentPageUrl: data?.paymentPageUrl || '',
+      razorpayKeyId: data?.razorpayKeyId || '',
       customDomainUrl: data?.customDomainUrl || '',
       amount: data?.amount || 1999,
     };
   } catch (err) {
     console.warn('Failed to fetch payment config', err);
-    return { success: false, paymentPageUrl: '' };
+    return { success: false, paymentPageUrl: '', razorpayKeyId: '' };
   }
 }
 

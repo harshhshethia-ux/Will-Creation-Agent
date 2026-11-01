@@ -63,6 +63,7 @@ export interface AppSettings {
   requireTrainingOrientation: boolean; // default true
   externalTrainingUrl: string; // optional external LMS/video link
   razorpayPaymentPageUrl: string; // direct Razorpay payment link (e.g. https://pages.razorpay.com/xxx or https://rzp.io/l/xxx)
+  razorpayKeyId?: string; // Razorpay public key ID (rzp_live_... or rzp_test_...)
 }
 
 export interface RegistrationRecord {
@@ -105,7 +106,7 @@ let appSettings: AppSettings = {
   customDomainUrl: '',
   requireTrainingOrientation: true,
   externalTrainingUrl: '',
-  razorpayPaymentPageUrl: '',
+  razorpayPaymentPageUrl: 'https://rzp.io/rzp/wBVmkpr',
 };
 
 // Active OTP storage: phone -> { otp, expiresAt }
@@ -171,6 +172,9 @@ function loadDataFromDisk() {
           clean = 'https://' + clean;
         }
         appSettings.razorpayPaymentPageUrl = clean;
+      }
+      if (!appSettings.razorpayKeyId && process.env.VITE_RAZORPAY_KEY_ID) {
+        appSettings.razorpayKeyId = process.env.VITE_RAZORPAY_KEY_ID.trim();
       }
     }
   } catch (e) {
@@ -259,6 +263,7 @@ async function startServer() {
     return res.json({
       success: true,
       paymentPageUrl: appSettings.razorpayPaymentPageUrl || '',
+      razorpayKeyId: appSettings.razorpayKeyId || process.env.VITE_RAZORPAY_KEY_ID || '',
       customDomainUrl: appSettings.customDomainUrl || '',
       amount: 1999,
       requireTrainingOrientation: appSettings.requireTrainingOrientation,
@@ -304,6 +309,9 @@ async function startServer() {
           : appSettings.requireTrainingOrientation,
         externalTrainingUrl: (settings.externalTrainingUrl || '').trim(),
         razorpayPaymentPageUrl: cleanPaymentUrl,
+        razorpayKeyId: settings.razorpayKeyId !== undefined
+          ? (settings.razorpayKeyId || '').trim()
+          : (appSettings.razorpayKeyId || process.env.VITE_RAZORPAY_KEY_ID || ''),
       };
       saveSettingsToDisk();
     }

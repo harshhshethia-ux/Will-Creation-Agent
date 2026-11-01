@@ -25,6 +25,7 @@ import {
   Users,
   Sparkles,
   PlayCircle,
+  Key,
 } from 'lucide-react';
 import { verifyAdminPin, ADMIN_MASTER_PIN } from '../services/verificationService';
 import {
@@ -95,7 +96,20 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
   const [allowedPagesInput, setAllowedPagesInput] = useState('');
   const [filterKeywordsInput, setFilterKeywordsInput] = useState('will, succession, testament');
   const [customDomainInput, setCustomDomainInput] = useState('');
-  const [razorpayPaymentPageUrlInput, setRazorpayPaymentPageUrlInput] = useState('');
+  const [razorpayPaymentPageUrlInput, setRazorpayPaymentPageUrlInput] = useState(() => {
+    try {
+      return localStorage.getItem('wcm_cached_payment_url') || 'https://rzp.io/rzp/wBVmkpr';
+    } catch {
+      return 'https://rzp.io/rzp/wBVmkpr';
+    }
+  });
+  const [razorpayKeyIdInput, setRazorpayKeyIdInput] = useState(() => {
+    try {
+      return localStorage.getItem('wcm_custom_razorpay_key') || '';
+    } catch {
+      return '';
+    }
+  });
   const [requireTrainingOrientation, setRequireTrainingOrientation] = useState(true);
   const [externalTrainingUrlInput, setExternalTrainingUrlInput] = useState('');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -123,6 +137,9 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
         setFilterKeywordsInput((data.settings.filterKeywords || []).join(', '));
         setCustomDomainInput(data.settings.customDomainUrl || '');
         setRazorpayPaymentPageUrlInput(data.settings.razorpayPaymentPageUrl || '');
+        if (data.settings.razorpayKeyId) {
+          setRazorpayKeyIdInput(data.settings.razorpayKeyId);
+        }
         setRequireTrainingOrientation(data.settings.requireTrainingOrientation !== false);
         setExternalTrainingUrlInput(data.settings.externalTrainingUrl || '');
       }
@@ -209,12 +226,15 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
       cleanCustomDomain = 'https://' + cleanCustomDomain;
     }
 
+    const cleanKeyId = razorpayKeyIdInput.trim();
+
     const res = await updateServerSettings(
       {
         allowedRazorpayPageIds: pageIdsArray,
         filterKeywords: keywordsArray,
         customDomainUrl: cleanCustomDomain,
         razorpayPaymentPageUrl: cleanPaymentUrl,
+        razorpayKeyId: cleanKeyId,
         requireTrainingOrientation,
         externalTrainingUrl: externalTrainingUrlInput.trim(),
       },
@@ -224,16 +244,23 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
     setIsSavingSettings(false);
     if (res && res.success) {
       try {
-        localStorage.setItem('wcm_cached_payment_url', cleanPaymentUrl);
+        if (cleanPaymentUrl) {
+          localStorage.setItem('wcm_cached_payment_url', cleanPaymentUrl);
+        } else {
+          localStorage.removeItem('wcm_cached_payment_url');
+        }
+        if (cleanKeyId) {
+          localStorage.setItem('wcm_custom_razorpay_key', cleanKeyId);
+        }
         window.dispatchEvent(
           new CustomEvent('wcm_settings_updated', {
-            detail: { razorpayPaymentPageUrl: cleanPaymentUrl },
+            detail: { razorpayPaymentPageUrl: cleanPaymentUrl, razorpayKeyId: cleanKeyId },
           })
         );
       } catch {
         // ignore
       }
-      setSettingsSuccessMsg('✓ Razorpay CTA link and restrictions saved! The Landing Page CTA now immediately redirects to this link.');
+      setSettingsSuccessMsg('✓ Razorpay configuration saved! Landing Page CTA is now active and up to date.');
       setTimeout(() => setSettingsSuccessMsg(''), 5000);
       loadLedgerAndSettings();
     } else {
@@ -664,22 +691,66 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
                   </span>
                 </div>
 
-                <div className="pt-2 border-t border-stone-200">
-                  <h4 className="font-bold text-stone-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
-                    <ExternalLink className="w-3.5 h-3.5 text-amber-700" />
-                    2. Direct Razorpay Payment Page URL (for Landing Page CTA)
-                  </h4>
-                  <p className="text-stone-600 leading-relaxed mt-1 text-[11px]">
-                    Enter your dedicated Razorpay Payment Page URL (e.g. <code>https://pages.razorpay.com/...</code> or <code>https://rzp.io/l/...</code>). When visitors click <strong>"Buy The Will Blueprint Now"</strong> on the landing page, they will be registered and immediately redirected to this page to pay.
-                  </p>
-                  <div className="mt-2 space-y-1.5">
+                <div className="pt-2 border-t border-stone-200 space-y-3">
+                  <div>
+                    <h4 className="font-bold text-stone-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-amber-700" />
+                      2. Razorpay Payment Gateway & Checkout Configuration
+                    </h4>
+                    <p className="text-stone-600 leading-relaxed mt-1 text-[11px]">
+                      Choose how your customers pay on the landing page: either via the <strong>In-App Razorpay Gateway Popup</strong> (recommended) or a <strong>Direct Razorpay Payment Page URL</strong>.
+                    </p>
+                  </div>
+
+                  {/* Option A: In-App Gateway Key */}
+                  <div className="bg-white p-3 rounded-lg border border-stone-200 space-y-2">
+                    <label className="text-[11px] font-semibold text-stone-800 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Key className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Method A: Razorpay Public Key ID (In-App Gateway Popup)</span>
+                      </span>
+                      {razorpayKeyIdInput.trim() && (
+                        <span className="text-[10px] text-emerald-700 font-mono font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                          ✓ Key Configured
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="text"
+                      value={razorpayKeyIdInput}
+                      onChange={(e) => setRazorpayKeyIdInput(e.target.value)}
+                      placeholder="e.g. rzp_live_xxxxxxxxxxxx or rzp_test_xxxxxxxxxxxx"
+                      className="w-full text-xs px-3 py-2 border border-stone-300 rounded-lg bg-stone-50 font-mono text-stone-900"
+                    />
+                    <span className="text-[10px] text-stone-500 block">
+                      Found in Razorpay Dashboard → Account & Settings → API Keys. When set, clicking CTA opens the instant Razorpay payment modal with UPI, QR, Google Pay, PhonePe, Cards, NetBanking.
+                    </span>
+                  </div>
+
+                  {/* Option B: External Payment Page URL */}
+                  <div className="bg-white p-3 rounded-lg border border-stone-200 space-y-2">
+                    <label className="text-[11px] font-semibold text-stone-800 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <ExternalLink className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Method B: External Dedicated Razorpay Payment Page URL (Optional)</span>
+                      </span>
+                      {razorpayPaymentPageUrlInput.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => setRazorpayPaymentPageUrlInput('')}
+                          className="text-[10px] text-red-600 hover:text-red-800 underline cursor-pointer"
+                        >
+                          Clear & Use In-App Popup
+                        </button>
+                      )}
+                    </label>
                     <div className="flex gap-2">
                       <input
                         type="text"
                         value={razorpayPaymentPageUrlInput}
                         onChange={(e) => setRazorpayPaymentPageUrlInput(e.target.value)}
-                        placeholder="e.g. https://pages.razorpay.com/will-blueprint or https://rzp.io/l/..."
-                        className="flex-1 text-xs px-3 py-2 border border-stone-300 rounded-lg bg-white font-mono"
+                        placeholder="e.g. https://pages.razorpay.com/pl_xxxxxx or https://rzp.io/l/xxxxxx"
+                        className="flex-1 text-xs px-3 py-2 border border-stone-300 rounded-lg bg-stone-50 font-mono text-stone-900"
                       />
                       {(() => {
                         const raw = razorpayPaymentPageUrlInput.trim();
@@ -698,14 +769,15 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
                         );
                       })()}
                     </div>
-                    {razorpayPaymentPageUrlInput.trim() && (
+                    {razorpayPaymentPageUrlInput.trim() ? (
                       <p className="text-[11px] text-emerald-700 font-mono">
-                        ✓ Will redirect to: {razorpayPaymentPageUrlInput.trim().startsWith('http') ? razorpayPaymentPageUrlInput.trim() : 'https://' + razorpayPaymentPageUrlInput.trim()}
+                        ✓ Active CTA Redirect: {razorpayPaymentPageUrlInput.trim().startsWith('http') ? razorpayPaymentPageUrlInput.trim() : 'https://' + razorpayPaymentPageUrlInput.trim()}
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-stone-500">
+                        ℹ️ Currently using In-App Razorpay Checkout Gateway. Visitors will pay directly in the website popup.
                       </p>
                     )}
-                    <span className="text-[10px] text-stone-500 block">
-                      If left empty, clicking the CTA will open the built-in in-app Razorpay popup instead.
-                    </span>
                   </div>
                 </div>
 

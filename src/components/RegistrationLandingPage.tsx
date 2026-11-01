@@ -102,27 +102,9 @@ export const isValidExternalUrl = (url?: string | null): boolean => {
   }
 };
 
-// Constructs destination URL safely without breaking Razorpay shortlinks
-export const buildDestinationUrl = (baseUrl: string, name?: string, phone?: string, email?: string): string => {
-  const norm = normalizePaymentUrl(baseUrl);
-  if (!norm) return '';
-  // Do not add query params if no user details are provided
-  if (!name?.trim() && !phone?.trim() && !email?.trim()) {
-    return norm;
-  }
-  // Razorpay short links (rzp.io/l/... or rzp.io/i/...) will break or 404 if modified with query params
-  if (norm.includes('rzp.io/l/') || norm.includes('rzp.io/i/')) {
-    return norm;
-  }
-  try {
-    const u = new URL(norm);
-    if (name?.trim()) u.searchParams.set('name', name.trim());
-    if (phone?.trim()) u.searchParams.set('phone', phone.trim());
-    if (email?.trim()) u.searchParams.set('email', email.trim());
-    return u.toString();
-  } catch {
-    return norm;
-  }
+// Constructs destination URL preserving the exact URL configured by the user
+export const buildDestinationUrl = (baseUrl: string, _name?: string, _phone?: string, _email?: string): string => {
+  return normalizePaymentUrl(baseUrl);
 };
 
 export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = ({
@@ -152,7 +134,7 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
   const [verificationResult, setVerificationResult] = useState<RegistrationResponse | null>(null);
   const [hasInitiatedRedirect, setHasInitiatedRedirect] = useState(false);
 
-  // Initialize configuredPaymentUrl immediately from localStorage cache if available
+  // Initialize configuredPaymentUrl immediately from localStorage cache or active URL
   const [configuredPaymentUrl, setConfiguredPaymentUrl] = useState<string>(() => {
     try {
       const cached = localStorage.getItem('wcm_cached_payment_url');
@@ -162,7 +144,7 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
     } catch {
       // ignore storage access error
     }
-    return '';
+    return 'https://rzp.io/rzp/wBVmkpr';
   });
   const [externalPaymentUrl, setExternalPaymentUrl] = useState<string | null>(null);
 
@@ -181,9 +163,14 @@ export const RegistrationLandingPage: React.FC<RegistrationLandingPageProps> = (
           } catch {
             // ignore
           }
-        } else {
-          setConfiguredPaymentUrl('');
+          return;
         }
+      }
+      setConfiguredPaymentUrl('');
+      try {
+        localStorage.removeItem('wcm_cached_payment_url');
+      } catch {
+        // ignore
       }
     });
   };
